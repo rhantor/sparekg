@@ -1,0 +1,1046 @@
+﻿
+SpareKG
+Peer-to-Peer Excess Baggage Marketplace
+Product Requirements, Architecture & Implementation Blueprint
+v1.0 — Foundation Document
+Stack: Next.js · React · Tailwind · RTK Query · Framer Motion · Firebase
+Initial Corridor: Kuala Lumpur ↔ Dhaka
+
+1. Executive Summary & User Flows
+1.1 Product Thesis
+SpareKG is a two-sided marketplace that monetizes a structurally underutilized resource: the unused checked-baggage allowance of international travelers. Two clear pain points anchor the value proposition. Travelers fly with 10-20 kg of unused allowance on every trip, which has zero salvage value to the airline and the passenger. Senders, meanwhile, face courier rates of USD 8-15 per kilogram on the Kuala Lumpur to Dhaka corridor with delivery windows of 5-10 business days, often saddled with customs friction on items that would be uncontroversial in personal luggage.
+The platform sits between these two parties as a trust, discovery, and settlement layer. It does not move physical goods, hold inventory, or operate as a freight forwarder. Its role is to verify identities, surface relevant flights, mediate price discovery through a points-based interaction economy, and establish the rails for safe handoff and dispute resolution.
+1.2 Target Users & Initial Market
+The launch corridor is Kuala Lumpur to Dhaka, chosen for three structural reasons. First, the route has high volume of Bangladeshi diaspora travel, supplying a steady inventory of trusted travelers. Second, the price gap between airline excess-baggage fees and informal courier rates is wide enough to support meaningful margins on both sides. Third, the founding team has direct cultural and language access to both endpoints, which is critical for KYC verification and dispute resolution in the early growth phase.
+Two primary personas:
+Traveler — A returning student, family visitor, or business traveler with confirmed flight tickets and 5-25 kg of unused checked allowance. Motivated by side income, typically MYR 200-800 per trip.
+Sender — Diaspora workers in Malaysia sending gifts, documents, electronics, or specialty foods to family in Bangladesh, or small e-commerce operators sourcing from KL markets. Motivated by lower cost and/or faster delivery than DHL/FedEx.
+1.3 Headline User Flow — Traveler
+The traveler-side flow is structured to convert intent (a confirmed flight) into a monetized listing in under five minutes, while gating actual transactional capability behind verification.
+Sign-up & onboarding — Email/password or Google Sign-In. The user lands on a four-screen onboarding carousel (the dynamic video portal) covering how the platform works, the bidding flow, prohibited goods, and safety protocols.
+KYC submission — User uploads government ID front, ID back, and a live selfie. Submission moves to the moderation queue. The user can browse the platform but cannot post or accept until approved.
+Profile completion — User adds payout details, optional spoken languages, and trip history if any. Verified profile gets a green badge.
+Flight posting — User fills the flight form: origin airport, destination airport, departure datetime, arrival datetime, airline, flight number, available kilograms, accepted item categories, asking price per kg or fixed total. Posting deducts a fixed flight_post_cost in points. The flight enters DRAFT until points are deducted, then becomes LIVE.
+Bid management — Senders submit bids against the listing. The traveler sees ranked bids, accepts one, counters, or declines. Acceptance moves the bid to AGREED.
+Pre-flight handoff — Sender and traveler exchange contact via in-app channel only after AGREED. Sender hands over packed items at an agreed location with a documented item manifest and photos. Traveler signs a digital handoff receipt.
+In-flight & delivery — Traveler marks status milestones: PICKED_UP, DEPARTED, ARRIVED, DELIVERED. Delivery requires a recipient signature/photo and a confirmation code shared with the sender.
+Settlement — Once both parties confirm DELIVERED with no dispute window violation, traveler payout is released. A 1-5 star rating is exchanged.
+1.4 Headline User Flow — Sender
+Sign-up & KYC — Same gate as traveler. A sender cannot place a bid without an approved KYC.
+Discovery — Search by destination, departure window, minimum kg, urgency. Results sort by relevance, then by traveler rating, then by price. An urgency boost surfaces senders' requests but here it is the traveler's listings being browsed.
+Listing detail — Sender views traveler profile, rating, completed trips, accepted categories, route, and price. A trust panel shows verification badges.
+Bidding — Sender submits a bid: weight in kg, item category, declared item value, special handling notes, optional urgency boost (extra points for top-of-list placement on the traveler's bid view). Each bid submission costs a points fee.
+Bid lifecycle — Bid is PENDING until traveler responds. If accepted, it becomes AGREED, both parties exchange contact, and a transaction record opens.
+Handoff — Sender prepares items per platform rules (no prohibited goods, item manifest, photos). Sender confirms HANDED_OVER in-app.
+Tracking — Sender follows status updates posted by the traveler.
+Receipt & rating — Recipient confirms with a one-time code. Sender rates the traveler. Funds release.
+1.5 State Machines
+Two state machines underpin the entire system. Their transitions must be enforced server-side via Cloud Functions, never client-side, to prevent race conditions and tampering.
+1.5.1 Flight Status
+State
+Trigger
+Notes
+DRAFT
+Created without sufficient points
+Hidden. Cannot be bid on.
+LIVE
+Points deducted, post fee paid
+Visible in search.
+LOCKED
+All listed kg consumed by AGREED bids
+Hidden from search but accessible to existing bidders.
+IN_TRANSIT
+Traveler marks PICKED_UP
+Bid window closed. New bids rejected.
+COMPLETED
+All AGREED bids reach DELIVERED
+Final.
+CANCELLED
+Traveler cancels or admin removes
+Refund logic per cancellation policy.
+
+1.5.2 Bid / Request Status
+State
+Trigger
+Notes
+PENDING
+Sender submits bid, points held
+Traveler review window.
+AGREED
+Traveler accepts bid
+Points captured. Contact unlocks.
+DECLINED
+Traveler rejects
+Points refunded fully.
+EXPIRED
+Auto-expires before traveler responds
+Points refunded fully.
+HANDED_OVER
+Sender confirms physical handoff
+Triggers carrier liability window.
+DELIVERED
+Traveler marks delivery + recipient code
+Triggers payout release timer.
+DISPUTED
+Either party flags within window
+Locks payout. Admin intervention.
+RESOLVED
+Admin closes dispute
+Final settlement applied.
+
+2. The Points / Connects Economy
+2.1 Design Philosophy
+The points economy serves three jobs and only three jobs. It must rate-limit low-quality activity (spam listings, unserious bids), it must allow the platform to monetize before transaction-level revenue is mature, and it must give power users a controllable lever (urgency boost) without breaking fairness for everyone else. Anything beyond these three jobs is feature creep and should be rejected during reviews.
+The model deliberately follows Upwork's Connects pattern rather than an ad-auction model because two-sided marketplaces with low transaction frequency per user (a sender ships maybe 2-4 times a year) cannot sustain a true bidding marketplace for visibility without crushing organic discovery. Connects-style economies create just enough friction to filter, without becoming pay-to-win.
+2.2 Points Sources
+Source
+Amount
+Notes
+Sign-up bonus (post KYC)
+100 pts
+One-time. Released only after KYC approval to prevent farming.
+Monthly free allotment
+20 pts
+First of every month. Verified users only. Caps at 60 if unused.
+Successful trip completion (traveler)
+30 pts
+Released after no-dispute window.
+Successful delivery review (sender)
+15 pts
+Released after rating exchanged.
+Referral — referrer
+50 pts
+Released when invitee completes first transaction.
+Referral — invitee
+25 pts
+Released on first KYC approval.
+Direct purchase
+Variable
+MYR 1.00 = 10 pts, with bulk-tier discounts (see 2.4).
+
+2.3 Points Sinks
+Action
+Cost
+Refund Policy
+Post a flight listing
+20 pts
+Refunded if traveler cancels within 1 hr of posting.
+Submit a bid on a listing
+5 pts
+Fully refunded on DECLINE or EXPIRE. Captured on AGREED.
+Counter-offer (traveler → sender)
+0 pts
+Free for traveler; sender pays 3 pts to accept counter.
+Featured flight listing (top of route)
+15 pts / 24 hrs
+Non-refundable. Stacks with normal post fee.
+Sender urgency boost (level 1)
+10 pts / 24 hrs
+Highlights bid in traveler's queue. Non-refundable.
+Sender urgency boost (level 2)
+25 pts / 48 hrs
+Adds priority badge + push notification to matching travelers.
+Sender urgency boost (level 3 — Express)
+50 pts / 72 hrs
+Top-of-feed placement + admin-curated traveler outreach.
+Re-list expired flight
+10 pts
+Discounted re-post within 7 days of expiry.
+2.4 Bulk Purchase Tiers
+Package
+Points
+Price (MYR)
+Effective Rate
+Starter
+100 pts
+10.00
+10 pts/MYR
+Standard
+550 pts
+50.00
+11 pts/MYR (10% bonus)
+Pro
+1,200 pts
+100.00
+12 pts/MYR (20% bonus)
+Power
+3,500 pts
+250.00
+14 pts/MYR (40% bonus)
+2.5 Urgency Mechanics — Detailed Logic
+Urgency is the single most abusable lever in the system, so the rules need to be unambiguous and server-enforced. The implementation rests on a small number of invariants.
+Urgency boosts are time-bound, not action-bound. A 24-hour boost expires on a wall-clock timer regardless of how many travelers see the bid.
+Boosts apply only to bids in PENDING state. The moment a bid moves to AGREED, DECLINED, or EXPIRED, any active boost is auto-cancelled and pro-rata points are not refunded.
+A sender may have at most one active level-3 (Express) boost per 24-hour period across all bids. This prevents spamming all listings on a popular route with Express boosts.
+Level-3 boosts trigger an admin-side notification only on routes flagged as PRIORITY_CORRIDORS in the platform config. Admins manually reach out only during the soft-launch period; this transitions to fully automated push notifications once the carrier base hits a threshold.
+Boosts decay in ranking weight. A bid with a boost applied 22 hours ago ranks below an identical bid with a boost applied 1 hour ago, even at the same level. This forces senders to apply urgency genuinely close to their deadline.
+2.6 Anti-Abuse Rules
+Six rules every points operation must satisfy before it commits:
+All point mutations write to the points_ledger collection in the same Firestore transaction as the balance update. Never update balance without writing a ledger entry.
+Refunds are themselves ledger entries with a refund_of pointer to the original entry. Never adjust an old entry.
+Hard cap on monthly free points accumulation (60 pts). Beyond cap, the monthly bonus is silently dropped, not stockpiled.
+Points purchased via card are non-refundable in points but refundable in MYR via the dispute process. This prevents purchase-then-refund laundering.
+Daily velocity check: any user spending more than 500 pts in 24 hours is flagged for admin review on the next event. Not blocked, just flagged.
+Promotional points (sign-up, monthly, referral) cannot be used for direct purchase refunds and are tracked in a separate balance field for accounting separation.
+
+3. Database Schema — Firestore
+3.1 Schema Design Principles
+Firestore is a document database with collection-level indexes. A few rules govern good schema design here. Keep documents small (under 100 KB ceiling, ideally under 5 KB hot path). Denormalize aggressively for read performance, accept the write-fanout cost, and use Cloud Functions to keep denormalized fields in sync. Subcollections beat nested arrays for any list that can grow unboundedly. Composite indexes are the bottleneck on cost and latency, so the schema below pre-declares the indexes the access patterns require.
+The platform uses thirteen top-level collections. Five subcollections are scoped to user or flight documents. Every collection has its own security rules, ownership semantics, and write surface.
+3.2 Top-Level Collections — Index
+Collection
+Purpose
+Write Path
+users
+Identity, profile, public-facing stats
+Cloud Function on auth + user-edit
+kyc_submissions
+Identity documents under review
+Client write, admin read/update
+flights
+Posted flight listings
+Client write (verified user only)
+bids
+Sender bids on flights
+Client write (verified user only)
+transactions
+Agreed-bid lifecycle records
+Cloud Function only
+points_ledger
+Append-only points history
+Cloud Function only
+points_purchases
+Real-money point purchase records
+Cloud Function on payment webhook
+disputes
+Disputed transactions
+Client open, admin manage
+reports
+User reports of bad actors / listings
+Client write only, admin read
+routes_config
+Curated route metadata, priority flags
+Admin only
+onboarding_videos
+Dynamic onboarding portal content
+Admin only
+app_config
+Feature flags, points pricing, fee schedule
+Admin only
+audit_log
+Admin actions trail
+Cloud Function only
+3.3 Collection Schemas
+users / {userId}
+One document per authenticated account. The userId is the Firebase Auth UID. Public fields are readable by any verified user; sensitive fields are gated by security rules.
+Field
+Type
+Description
+uid
+string
+Mirror of doc ID for query convenience.
+email
+string
+Verified email.
+phone
+string?
+E.164 format. Optional at sign-up, required pre-bid.
+displayName
+string
+Public name shown on listings.
+photoUrl
+string?
+Cloud Storage URL of profile photo.
+roles
+array<string>
+['traveler', 'sender'] — most users have both.
+kycStatus
+enum
+PENDING | UNDER_REVIEW | APPROVED | REJECTED.
+kycSubmissionRef
+ref?
+Pointer to latest kyc_submissions doc.
+pointsBalance
+number
+Current spendable points balance.
+promoBalance
+number
+Promotional points subset of pointsBalance.
+lifetimePointsEarned
+number
+All-time earned (denormalized for analytics).
+lifetimePointsSpent
+number
+All-time spent.
+completedTripsAsTraveler
+number
+Counter for badge logic.
+completedTripsAsSender
+number
+Counter for badge logic.
+averageRating
+number
+Float 0-5, recomputed on each rating event.
+ratingCount
+number
+Number of ratings received.
+preferredLanguage
+enum
+BN | EN — drives UI default.
+homeAirportCode
+string?
+IATA, used for default search.
+createdAt
+timestamp
+Server timestamp.
+lastActiveAt
+timestamp
+Updated on session start.
+suspended
+boolean
+If true, all writes blocked by security rules.
+suspensionReason
+string?
+Visible to admin only.
+Subcollection: users/{userId}/notifications
+Each notification is one document. TTL of 90 days enforced via scheduled Cloud Function. Push delivery is handled separately by FCM.
+Subcollection: users/{userId}/payment_methods
+Tokenized payment methods only — never store full card details. Stripe / SSLCommerz / iPay88 token plus last-four and brand.
+
+kyc_submissions / {submissionId}
+Each KYC attempt is one document. A user may have multiple historical submissions (re-submission after rejection). Identity document files live in Cloud Storage; the document holds only references and moderation state.
+Field
+Type
+Description
+submissionId
+string
+Mirror of doc ID.
+userId
+string
+Owner.
+idType
+enum
+PASSPORT | NATIONAL_ID | DRIVERS_LICENSE.
+idNumber
+string (encrypted)
+Encrypted at-rest via Cloud KMS-keyed Cloud Function.
+idCountry
+string
+ISO 3166-1 alpha-2.
+idFrontUrl
+string
+Cloud Storage path. Signed-URL access only.
+idBackUrl
+string?
+Signed-URL access only.
+selfieUrl
+string
+Live capture, signed-URL access only.
+livenessScore
+number?
+From third-party liveness check, optional.
+fullName
+string
+As on ID.
+dateOfBirth
+timestamp
+From ID.
+status
+enum
+PENDING | UNDER_REVIEW | APPROVED | REJECTED.
+assignedAdminId
+string?
+Admin who claimed this submission.
+reviewNotes
+string?
+Admin-visible notes.
+rejectionReason
+enum?
+DOC_BLURRY | NAME_MISMATCH | EXPIRED_ID | etc.
+userRejectionMessage
+string?
+User-visible message on rejection.
+submittedAt
+timestamp
+Server timestamp on create.
+reviewedAt
+timestamp?
+Set on approve/reject.
+
+flights / {flightId}
+The most-read collection in the system. Schema is optimized for fast list queries by route + date + available kg, with denormalized traveler info to avoid join roundtrips.
+Field
+Type
+Description
+flightId
+string
+Mirror of doc ID.
+travelerId
+string
+Owner UID.
+traveler
+map
+Denormalized: { displayName, photoUrl, averageRating, completedTripsAsTraveler, kycVerified }.
+originAirport
+string
+IATA code.
+destinationAirport
+string
+IATA code.
+routeKey
+string
+Composite: 'KUL-DAC' — pre-computed for index efficiency.
+departureAt
+timestamp
+Local-converted-to-UTC.
+arrivalAt
+timestamp
+For ETA display.
+airline
+string
+Carrier name or IATA.
+flightNumber
+string
+MH196, BG386, etc.
+totalKgAvailable
+number
+Original capacity.
+kgRemaining
+number
+Atomically decremented on AGREED bids.
+pricePerKg
+number?
+MYR. Null if fixed-total pricing.
+fixedTotalPrice
+number?
+MYR. Mutually exclusive with pricePerKg.
+currency
+string
+ISO 4217. Default MYR.
+acceptedCategories
+array<string>
+From canonical category list (see 5.3).
+prohibitedItems
+array<string>
+Free-text additional restrictions.
+specialNotes
+string?
+Traveler's free-text notes.
+status
+enum
+DRAFT | LIVE | LOCKED | IN_TRANSIT | COMPLETED | CANCELLED.
+isFeatured
+boolean
+If feature points spent.
+featuredUntil
+timestamp?
+Auto-cleared by scheduled function.
+bidCount
+number
+Denormalized counter.
+createdAt
+timestamp
+Server timestamp.
+updatedAt
+timestamp
+Server timestamp on every write.
+
+bids / {bidId}
+Top-level collection rather than subcollection because senders need to query 'all my bids' across flights efficiently. Composite indexes on (senderId, status, createdAt desc) and (flightId, status, urgencyLevel desc) are required.
+Field
+Type
+Description
+bidId
+string
+Mirror of doc ID.
+flightId
+string
+Target flight ref.
+travelerId
+string
+Denormalized for security rules and queries.
+senderId
+string
+Bid owner.
+sender
+map
+Denormalized: { displayName, photoUrl, averageRating, completedTripsAsSender }.
+kgRequested
+number
+Must be ≤ flight.kgRemaining at acceptance time.
+itemCategory
+string
+From canonical list.
+itemDescription
+string
+Sender-provided description (≤ 280 chars).
+declaredValue
+number
+MYR. Used for liability cap.
+specialHandling
+string?
+Fragile / refrigerated / battery / etc.
+offeredPricePerKg
+number?
+MYR.
+offeredTotal
+number
+MYR. Computed if per-kg pricing.
+urgencyLevel
+number
+0 | 1 | 2 | 3 — drives ranking.
+urgencyExpiresAt
+timestamp?
+Set when boost applied.
+pointsHeld
+number
+Bid fee on hold.
+status
+enum
+PENDING | AGREED | DECLINED | EXPIRED | HANDED_OVER | DELIVERED | DISPUTED.
+agreedAt
+timestamp?
+Set on accept.
+expiresAt
+timestamp
+PENDING TTL — defaults to 24 hrs before flight departure.
+transactionId
+ref?
+Set when status moves to AGREED.
+createdAt
+timestamp
+Server timestamp.
+
+transactions / {transactionId}
+Created by Cloud Function the moment a bid moves to AGREED. Holds the canonical record of an agreed shipment. Bid and flight documents reference back to it.
+Field
+Type
+Description
+transactionId
+string
+Mirror of doc ID.
+bidId
+string
+Source bid.
+flightId
+string
+Target flight.
+travelerId
+string
+Party 1.
+senderId
+string
+Party 2.
+kg
+number
+Final agreed weight.
+totalPrice
+number
+Final agreed price in MYR.
+platformFee
+number
+Computed from app_config feeSchedule.
+payoutToTraveler
+number
+totalPrice - platformFee.
+payoutStatus
+enum
+ESCROWED | RELEASED | REFUNDED | DISPUTED.
+handoffPhotos
+array<string>
+Cloud Storage URLs.
+handoffConfirmedAt
+timestamp?
+Sender-side.
+pickupConfirmedAt
+timestamp?
+Traveler-side.
+deliveryCode
+string
+6-digit code, sender shares with recipient.
+deliveredAt
+timestamp?
+Traveler-side.
+recipientConfirmedAt
+timestamp?
+Code matched.
+disputeId
+ref?
+If raised.
+ratingByTravelerOfSender
+number?
+1-5.
+ratingBySenderOfTraveler
+number?
+1-5.
+createdAt
+timestamp
+
+closedAt
+timestamp?
+On final settlement.
+
+points_ledger / {entryId}
+Append-only. The single source of truth for the points economy. Balance fields on user docs are denormalized projections of this ledger and must always be reconcilable from it. This collection is the financial audit trail.
+Field
+Type
+Description
+entryId
+string
+Mirror of doc ID.
+userId
+string
+Account affected.
+delta
+number
+Signed integer. Positive = credit, negative = debit.
+balanceAfter
+number
+Snapshot of balance immediately after this entry.
+category
+enum
+SIGNUP | MONTHLY | REFERRAL | TRIP_REWARD | BID_HOLD | BID_CAPTURE | BID_REFUND | FLIGHT_POST | FEATURE | URGENCY | PURCHASE | ADMIN_ADJUSTMENT | DISPUTE_RESOLUTION.
+referenceType
+enum
+FLIGHT | BID | TRANSACTION | PURCHASE | DISPUTE | NONE.
+referenceId
+string?
+Doc ID of referenced record.
+refundOf
+ref?
+Pointer to original entry being refunded.
+promoPortion
+number
+Of |delta|, how much was promotional balance.
+description
+string
+Human-readable, shown in user's history.
+createdAt
+timestamp
+Server timestamp. Indexed.
+createdBy
+enum
+USER | SYSTEM | ADMIN.
+adminId
+string?
+If created by admin.
+
+Other Collections — Brief
+The remaining collections follow the same pattern: a strict shape, server-only writes for anything financially or trust-relevant, and explicit indexes for known query patterns.
+points_purchases — One doc per real-money purchase. Webhook-written from payment provider. Status: PENDING | COMPLETED | FAILED | REFUNDED.
+disputes — Opened by either party within the dispute window. Holds claim text, evidence file references, status (OPEN | UNDER_REVIEW | RESOLVED_FOR_SENDER | RESOLVED_FOR_TRAVELER | SPLIT | CLOSED_INVALID), admin notes.
+reports — User-submitted reports of bad actors, prohibited goods, off-platform contact attempts. Cheap to write, expensive to ignore.
+routes_config — Per-corridor metadata: priority flag, default departure-window suggestion, average kg traded, prohibited-item overrides per destination customs rules.
+onboarding_videos — Sliding portal content. Fields: order, titleEn, titleBn, descriptionEn, descriptionBn, videoUrl (Cloud Storage), thumbnailUrl, isActive, createdBy.
+app_config — Single document or small handful of documents holding fee schedule, points pricing, feature flags. Read by every client on cold start.
+audit_log — Append-only record of admin actions: who did what, when, against what record.
+3.4 Collection Relationships
+The relationship graph is intentionally shallow. Most relationships are unidirectional pointers stored as document references or string IDs.
+users 1—* flights — A traveler can post many flights.
+users 1—* bids — A sender can submit many bids.
+flights 1—* bids — A flight receives many bids.
+bids 1—1 transactions — One bid produces at most one transaction (on AGREE).
+transactions 0..1—1 disputes — A transaction may have one dispute.
+users 1—* points_ledger — A user has a stream of ledger entries.
+users 1—* kyc_submissions — A user may submit and re-submit KYC.
+3.5 Required Composite Indexes
+Firestore requires explicit composite indexes for any multi-field query. The following must be declared in firestore.indexes.json before launch:
+Collection
+Index Fields
+Use Case
+flights
+routeKey ASC, departureAt ASC, kgRemaining DESC
+Search results
+flights
+status ASC, departureAt ASC
+Admin queue, scheduled cleanup
+flights
+travelerId ASC, status ASC, departureAt DESC
+Traveler's own listings
+bids
+senderId ASC, status ASC, createdAt DESC
+Sender's bid history
+bids
+flightId ASC, status ASC, urgencyLevel DESC, createdAt ASC
+Traveler's bid queue
+bids
+travelerId ASC, status ASC, createdAt DESC
+Traveler dashboard
+points_ledger
+userId ASC, createdAt DESC
+User points history
+points_ledger
+userId ASC, category ASC, createdAt DESC
+Filter user history
+transactions
+travelerId ASC, payoutStatus ASC, deliveredAt DESC
+Payout queue
+kyc_submissions
+status ASC, submittedAt ASC
+Moderation queue (FIFO)
+
+4. Technical Implementation Strategy
+4.1 High-Level Architecture
+SpareKG is a single Next.js application (App Router, server components where useful) backed by Firebase services. The architecture deliberately avoids a separate Node/Express backend in v1: Cloud Functions for Firebase serve as the trusted compute layer, and Firestore security rules serve as the authorization layer. This keeps the operational footprint small enough for a four-person team to manage without dedicated DevOps.
+The boundary between client-trusted writes and server-only writes is the most important architectural decision in the system. All financially-relevant mutations (point deductions, status transitions, payout releases) go through Cloud Functions. The client never writes to points_ledger, transactions, or audit_log directly. Firestore security rules enforce this with deny-all on those collections except for service-account writes.
+4.2 Repository Layout
+A monorepo is overkill at this scale. A flat Next.js app with a typed Firebase Admin SDK in functions/ is sufficient. Suggested layout:
+SpareKG/
+├── app/                  # Next.js App Router pages
+│   ├── (marketing)/      # Public landing, about, FAQ
+│   ├── (auth)/           # Sign in, sign up, password reset
+│   ├── (app)/            # Authenticated app shell
+│   │   ├── flights/      # Browse, post, detail, manage
+│   │   ├── bids/         # My bids, incoming bids
+│   │   ├── transactions/ # Active and historical
+│   │   ├── points/       # Wallet, purchase, history
+│   │   └── profile/      # KYC, settings, payouts
+│   └── admin/            # Admin panel (route-guarded)
+├── components/           # Shared UI primitives
+├── features/             # RTK slices and RTK Query APIs
+│   ├── auth/             # authSlice, authApi
+│   ├── flights/          # flightsApi, flightsSlice
+│   ├── bids/             # bidsApi
+│   ├── points/           # pointsApi
+│   └── kyc/              # kycApi
+├── lib/
+│   ├── firebase.ts       # Client SDK init
+│   ├── firebaseAdmin.ts  # Server-side init for Next API routes
+│   └── store.ts          # Redux store wiring
+├── functions/            # Firebase Cloud Functions (separate package)
+│   ├── src/
+│   │   ├── triggers/     # Firestore/Auth triggers
+│   │   ├── callable/     # Callable functions (bid accept, etc.)
+│   │   ├── http/         # HTTP webhooks (payment provider)
+│   │   └── scheduled/    # Cron functions (TTL cleanup, monthly points)
+├── firestore.rules
+├── firestore.indexes.json
+└── storage.rules
+4.3 RTK Query + Firebase Integration Pattern
+RTK Query does not have a first-party Firebase fetcher, but it pairs cleanly via a custom baseQuery. The pattern is to bypass HTTP entirely and treat each endpoint as a function that calls the Firebase JS SDK directly. This gives the developer ergonomics of RTK Query (caching, invalidation, hooks, optimistic updates) with the realtime sync of Firestore as a separate concern handled outside RTK.
+Reference implementation for the baseQuery:
+// features/baseQuery.ts
+import { BaseQueryFn } from '@reduxjs/toolkit/query';
+import { FirebaseError } from 'firebase/app';
+
+type FirebaseQueryArg = {
+  invoke: () => Promise<unknown>;
+};
+
+export const firebaseBaseQuery: BaseQueryFn<FirebaseQueryArg> =
+  async ({ invoke }) => {
+    try {
+      const data = await invoke();
+      return { data };
+    } catch (err) {
+      const e = err as FirebaseError;
+      return { error: { code: e.code, message: e.message } };
+    }
+  };
+Each feature defines its endpoints by composing Firebase SDK calls inside invoke. Tag-based cache invalidation works exactly as it does for HTTP endpoints. For realtime collections (the user's bid feed, active transaction list), use Firestore onSnapshot listeners that dispatch updateQueryData to keep RTK Query's cache in sync without polling. This hybrid pattern — RTK Query for command-style reads/writes plus onSnapshot for hot lists — is the cleanest one we have found at this scale.
+4.4 Authentication Flow
+Firebase Authentication is the identity provider. Sign-up and sign-in support email/password and Google Sign-In. Phone OTP is deliberately out of scope for v1 due to Firebase's per-project SMS quotas and the cost of bulk SMS in Bangladesh; we collect phone post-sign-up for handoff coordination but do not use it as a primary auth factor.
+Token handling: client stores ID tokens via the Firebase SDK's persistence layer. For Next.js server components and API routes that need authenticated server work, we forward the ID token in an HTTP-only cookie set after sign-in, then verify it server-side via the Admin SDK's verifyIdToken. Custom claims (admin: true, kycApproved: true) are set by Cloud Functions on KYC approval and propagate to clients on next token refresh (one-hour cycle, or via forceRefresh after critical state changes).
+4.5 Firestore Security Rules — Skeleton
+Security rules are the load-bearing wall of this architecture. The skeleton below illustrates the layering. Real rules expand each function with field-level checks.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() {
+      return isSignedIn() && request.auth.token.kycApproved == true;
+    }
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && !('pointsBalance' in request.resource.data.diff(resource.data).affectedKeys())
+        && !('roles' in request.resource.data.diff(resource.data).affectedKeys());
+      allow delete: if false;
+    }
+
+    match /flights/{flightId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified()
+        && request.resource.data.travelerId == request.auth.uid;
+      allow update: if isVerified()
+        && resource.data.travelerId == request.auth.uid
+        && resource.data.status in ['DRAFT', 'LIVE'];
+      allow delete: if isAdmin();
+    }
+
+    match /points_ledger/{entryId} { allow read: if isOwner(resource.data.userId) || isAdmin(); allow write: if false; }
+    match /transactions/{txId} { allow read: if isOwner(resource.data.travelerId) || isOwner(resource.data.senderId) || isAdmin(); allow write: if false; }
+    match /audit_log/{entryId} { allow read: if isAdmin(); allow write: if false; }
+  }
+}
+4.6 Cloud Functions — Required Set
+The Cloud Functions layer is small but load-bearing. Every function below should be implemented before public launch.
+Function
+Trigger
+Responsibility
+onUserCreate
+auth.onCreate
+Initialize user doc, attach default points, queue welcome flow.
+onKycApproved
+Firestore update
+Set custom claim kycApproved, release sign-up bonus.
+postFlightCallable
+Callable
+Atomic: deduct points, write ledger, create flight, return doc.
+submitBidCallable
+Callable
+Atomic: hold points, write ledger, create bid, notify traveler.
+acceptBidCallable
+Callable
+Atomic: capture sender points, lock flight kg, create transaction.
+declineOrExpireBid
+Firestore update + scheduled
+Refund held points, write refund ledger entry.
+onTransactionStatusChange
+Firestore update
+Push notifications, payout timer arming.
+scheduledMonthlyPoints
+Cron (1st 00:00)
+Issue monthly free points, capped.
+scheduledExpireUrgency
+Cron (every 15 min)
+Clear expired urgency boosts.
+scheduledFeaturedCleanup
+Cron (every 1 hr)
+Clear expired featured flags.
+paymentWebhookHttp
+HTTPS
+Verify provider signature, credit points on success.
+adminAdjustPointsCallable
+Callable (admin)
+Manual ledger adjustment with audit trail.
+4.7 Frontend State — RTK Slice Map
+authSlice — user object, auth status, custom claims (admin, kycApproved).
+uiSlice — modals, toasts, theme, language preference, onboarding completion flags.
+Plus one RTK Query API per domain (flightsApi, bidsApi, pointsApi, kycApi, transactionsApi, adminApi).
+The slice/api split keeps slices small and focused on UI state. All server data lives in RTK Query caches, which removes the need for ad-hoc useEffect-based fetching.
+4.8 Animation & Iconography
+Framer Motion handles route transitions, the onboarding video slider transitions, and micro-interactions on bid acceptance and points-spent confirmations. Reserve heavy animation for moments of psychological importance — a successful bid acceptance, KYC approval — not for every list-item hover. Lucide Icons supplies the entire icon set; do not mix icon libraries.
+4.9 Internationalization
+Bengali and English are first-class. Use next-intl or a similar message-catalog approach. Store user-facing strings in JSON, never hardcoded. Date and number formatting must use Intl APIs with the user's preferredLanguage. Currency display defaults to MYR for KL-Dhaka but the schema is currency-aware so additional corridors do not require schema migration.
+4.10 Mobile Strategy
+v1 ships as a responsive Next.js PWA, installable from the browser. v2 wraps the same codebase in a thin Capacitor or Expo Web container to produce APK/IPA artifacts; the Capacitor route reuses 95% of code and is the default recommendation. A pure React Native rewrite is rejected for v1 because the cost of maintaining two UI codebases with a four-person team outweighs the marginal native-feel gain.
+
+5. Security & Trust
+5.1 KYC — The Trust Foundation
+Every safety mechanism in the platform — the dispute process, the points ledger audit, the user reports queue — collapses if KYC is weak. The KYC pipeline must be treated as a critical-path security system, not an onboarding inconvenience.
+5.1.1 Document Capture
+Required artifacts at minimum: government photo ID front, ID back where applicable, and a live selfie captured in-app. The selfie must be captured through the platform's camera flow, not uploaded from the gallery. This is enforced by using the MediaStream API directly and rejecting file inputs on the selfie step. A short liveness prompt (turn head left, then right) raises the bar against static-photo spoofing without requiring a paid third-party liveness vendor in v1.
+5.1.2 Storage & Access
+ID images and selfies are stored in a Cloud Storage bucket with a security rule that allows write only by the owning user (path-prefixed by UID) and read only by service accounts. The Cloud Function that surfaces images to the admin moderation UI generates short-lived signed URLs, never raw storage URLs. ID number fields are encrypted at rest using a Cloud KMS-managed key; the decryption operation is logged to audit_log and tied to a moderation review event.
+5.1.3 Moderation Queue
+Submissions enter the moderation queue in FIFO order with a service-level target of 12 hours from submission to first-pass decision. Admins may approve, reject with a categorized reason (drives a templated user-facing message), or escalate. Re-submissions after rejection are allowed with a 1-hour cooldown to prevent spam. After three rejections the account is auto-flagged for senior-admin review.
+Phase-2 enhancement: integrate a third-party identity verifier (Veriff, Onfido, or Sumsub) as a first-pass filter so admins only see edge cases. This is deferred until volume justifies the per-check cost (typically USD 0.50-2.00 per submission).
+5.2 Trust Signals — Surfacing Safety to Users
+Verification status alone is not enough. The platform must make trust legible at every decision moment.
+Verified badge — Green check on profile photo, on every flight card, and on every bid card. Always visible.
+Trip count — '24 successful trips' as a sub-label on traveler profiles, derived from completedTripsAsTraveler.
+Average rating — Stars + count, never just stars. '4.8 (32)' is more trustworthy than just '4.8'.
+Cancellation rate — Visible to other party only after AGREED. Hidden in browse view to avoid pre-judgment based on small samples.
+Time-on-platform — 'Member since March 2026'. Discourages new throwaway accounts.
+ID country match — On the bid acceptance screen, surface whether the traveler's KYC country matches a route the bidder is sending to. Soft signal, not a block.
+5.3 Prohibited Goods Policy
+Prohibited goods are the single largest legal liability in this business. The policy must be unambiguous, enforced both at the user-education layer and the bid-validation layer, and revisable as customs regulations on either corridor change.
+5.3.1 Hard-Prohibited Categories (server-rejected)
+Currency in any form, gold bars or unmounted gold, jewellery above declared value threshold.
+Firearms, ammunition, weapons of any classification.
+Narcotics, controlled substances, prescription medication for parties other than the traveler.
+Live animals, animal parts, or perishable biological material.
+Lithium batteries above 100 Wh, loose lithium cells, e-cigarettes with batteries shipped without device.
+Liquids above the destination customs threshold, alcohol where destination customs prohibits.
+Counterfeit goods, replicas of luxury goods, anything bearing a trademark not authorized for resale.
+Documents that constitute legal instruments — passports, visas, birth certificates of third parties, court documents.
+5.3.2 Soft-Restricted Categories (require traveler explicit accept)
+Electronics with non-removable batteries (laptops, phones in original packaging).
+Cosmetics and personal care items (volume thresholds apply).
+Powdered foods and spices (often customs-flagged in Bangladesh).
+Books and printed materials (some titles are restricted at destination).
+Religious or ceremonial items.
+5.3.3 Enforcement Mechanics
+Item-category dropdown is canonical and bound to the policy version. New bids cannot select free-text categories.
+Hard-prohibited categories are not even available in the dropdown. They are listed in the help text with explanation.
+Soft-restricted categories trigger an in-app modal with policy summary and a tick-box that the traveler must accept on bid acceptance.
+Reports of prohibited goods bypass the normal queue and route directly to the senior-admin review track.
+Confirmed violations result in immediate account suspension, points forfeiture, and (depending on jurisdiction) reporting to authorities.
+5.4 Off-Platform Contact Risk
+Users will try to take agreed deals off-platform to avoid platform fees. This is bad for revenue and worse for safety, because off-platform deals lose all dispute protection. Mitigations:
+Contact details (phone, address) are revealed only after a bid reaches AGREED state, never before.
+In-app chat is the primary communication channel. Numeric strings that look like phone numbers or email addresses in pre-AGREED chat are masked client-side and flagged server-side.
+A user reporting an off-platform contact attempt with evidence triggers admin review. Confirmed cases result in suspension and points forfeiture.
+Keep platform fees moderate enough that off-platform circumvention isn't worth the dispute-protection loss. The 8-12% transaction fee target is calibrated for this.
+5.5 Dispute Process
+Disputes are inevitable. The architecture provides the rails for resolving them within the platform rather than escalating to the courts.
+Dispute window opens at HANDED_OVER and closes 72 hours after DELIVERED.
+Either party may open a dispute. Opening freezes the payout in escrow.
+Both parties submit evidence (photos, chat transcripts, manifests) within 48 hours of dispute opening.
+Admin reviews against a defined rubric. Decisions: full payout to traveler, full refund to sender, or split. Admin notes are mandatory and auditable.
+First dispute against a user is informational. Three confirmed disputes within 90 days triggers automatic suspension pending review.
+5.6 Insurance & Liability — A Note for v1
+v1 ships without insurance. The Terms of Service must clearly cap platform liability at the platform fee paid for the disputed transaction. Declared item value on bids exists for transparency, not coverage. v2 considerations: per-transaction insurance via partner (typical premium 1-3% of declared value), or self-insured pool funded by a small slice of platform fees.
+
+6. Admin Dashboard & Super-Admin Capabilities
+6.1 Architecture & Access Control
+The admin panel is a route-guarded section of the same Next.js application, mounted at /admin. It is not a separate codebase. This decision trades a small amount of bundle size for a large amount of operational simplicity: the admin team uses the same auth, the same Firestore SDK, the same component library, and ships in the same release cadence.
+Access is gated by the admin Firebase custom claim. Setting this claim is itself a privileged operation, performed only by a callable Cloud Function whose access list of super-admin UIDs is hardcoded in the function's code (not in Firestore, to prevent privilege escalation via a Firestore breach). The function logs every grant or revoke to audit_log.
+Two role tiers in v1:
+Admin — KYC moderation, dispute resolution, content management, user suspension, points adjustment up to a daily cap.
+Super-Admin — All admin powers plus role grants, app_config edits, financial dashboards, unlimited points adjustment, account deletions.
+6.2 Module: KYC Moderation Queue
+The single highest-leverage admin tool. SLA target: 12 hours from submission to decision.
+6.2.1 Features
+FIFO queue view with filterable status (PENDING, UNDER_REVIEW, REJECTED for re-review).
+Claim/release semantics — admin claiming a submission moves it to UNDER_REVIEW with their UID. Prevents duplicate work in a multi-admin setting.
+Side-by-side image viewer — ID front, ID back, selfie, with zoom and rotate. Signed URLs auto-refresh every 15 minutes.
+Cross-check panel — extracted name and DOB from ID alongside user-submitted name and DOB, with mismatch highlighting.
+Decision dial — Approve, Reject (with templated reason dropdown), Escalate (route to super-admin), Request Resubmission (sends user-facing message).
+Reject reasons are an enum with templated user-facing messages in EN and BN. No free-text rejection messages — this prevents inconsistent communication and reduces support load.
+Bulk actions — only allowed for clearly-bot submissions. Default UI is single-decision to enforce attention.
+6.2.2 Data Model
+The queue is backed by a Firestore query against kyc_submissions where status is PENDING or UNDER_REVIEW, sorted by submittedAt ascending. With composite index on (status, submittedAt) this is O(1) on page size. Decisions write back to the submission, update the user doc's kycStatus field, and trigger the onKycApproved Cloud Function on approve.
+6.3 Module: Economy Oversight
+The points economy is a virtual currency. The risk surface is the same as any currency system: inflation (over-issuance from buggy promo logic), fraud (chargebacks on point purchases), and abuse (collusion rings inflating completed-trip rewards). The economy oversight module exists to catch all three classes early.
+6.3.1 Real-Time Economy Dashboard
+Single page, refreshes on a 60-second polling cycle. Backed by a small set of pre-aggregated counters maintained by Cloud Functions on points_ledger writes. Direct queries against the full ledger are reserved for the audit view, not the dashboard.
+Total points outstanding — sum of all user pointsBalance fields. Should equal cumulative_credits − cumulative_debits.
+Last 24h: points issued (split by category), points spent (split by category), points purchased (in MYR and points).
+Last 7d trend chart — issued vs. spent vs. purchased, line chart.
+Top 20 spenders and top 20 earners (last 7 days). Click-through to user profile.
+Reconciliation indicator — green if outstanding equals credits−debits within rounding, red if drift detected.
+6.3.2 Ledger Audit View
+Searchable, filterable view of the full points_ledger. Filters: user, category, reference type, date range, delta sign.
+Export to CSV for accounting.
+Drill-down: clicking a ledger entry opens the source record (flight, bid, transaction, purchase).
+Reverse-entry tool — super-admin can issue an adjustment entry that nets a problematic prior entry to zero. Original entry is never modified. The adjustment is itself logged with the admin's UID and a mandatory reason.
+6.3.3 Abuse Heuristics
+A nightly scheduled function flags suspicious patterns, surfacing them in an admin review queue:
+Users earning more than 200 pts per day for three consecutive days from REFERRAL or TRIP_REWARD categories — possible referral ring or self-trip collusion.
+Pairs of users transacting more than three times within seven days — possible round-trip laundering.
+Users spending purchased points exclusively on bids that immediately become DELIVERED with same recipient phone number — possible self-shipment.
+Sudden spikes in monthly free points claims from new accounts created within 24 hours — possible bot wave.
+6.4 Module: Platform Analytics
+Distinct from the economy dashboard. Where economy oversight is about correctness, analytics is about growth and operations. Refresh cadence here can be slower (hourly) and the source can be a BigQuery export of Firestore for richer queries; v1 gets by with on-demand aggregation queries since data volume is low.
+6.4.1 Top-Level KPI Strip
+Daily active users (DAU) — split by primary role of session (Traveler-DAU vs Sender-DAU vs both).
+Weekly active users (WAU) and monthly active users (MAU).
+DAU/MAU ratio — engagement health metric.
+Total flights posted today, this week, this month.
+Total bids submitted, total bids accepted, ratio (= match rate).
+Total transaction volume in MYR (gross merchandise value).
+Platform revenue (sum of platform fees on settled transactions).
+6.4.2 Route Heatmap
+A visual list of corridors ranked by transaction volume in the last 30 days. Each corridor shows: number of LIVE flights, number of pending bids, average price per kg, average time-to-acceptance. This tells the team where to focus growth — adding a corridor is meaningless if the existing ones are under-supplied.
+6.4.3 Funnel Views
+Acquisition funnel — sign-up → KYC submitted → KYC approved → first action (post or bid) → first transaction. Conversion at each step, with cohort splits by acquisition source.
+Bid funnel — flight viewed → flight detail viewed → bid composed → bid submitted → bid accepted → handoff confirmed → delivery confirmed. Drop-off identification.
+Retention curve — cohort-week retention by sign-up week. Targets 30%+ at week 4.
+6.4.4 Operational Health
+KYC queue depth and median age (alarm if >24 hours).
+Dispute queue depth and median age.
+Failed payment rate.
+Cloud Function error rate by function name.
+Firestore read/write trends with cost projection.
+6.5 Module: Dispute & Content Management
+6.5.1 Dispute Console
+Dispute queue with status filters (OPEN, UNDER_REVIEW, awaiting evidence, RESOLVED).
+Single dispute view: full transaction context, both parties' submissions, evidence files, chat transcript inline.
+Decision actions: payout to traveler, refund to sender, split (with editable percentages), close as invalid.
+Mandatory rationale field — minimum 50 characters. Shown to both parties in their notification.
+Strike system — every confirmed dispute against a user is recorded; thresholds trigger automatic actions per 5.5.
+6.5.2 User Management
+Search by email, phone, UID, displayName.
+Profile detail view with full activity timeline (flights, bids, transactions, points, reports filed against, reports filed by).
+Suspend/unsuspend with mandatory reason and end-date (or indefinite). Suspension flips the suspended flag, which Firestore rules read on every write.
+Force KYC re-submission — moves user back to PENDING, requires fresh documents.
+Account deletion (super-admin only) — soft-delete that anonymizes PII while preserving ledger and audit history.
+6.5.3 Reports Triage
+Inbox of user-submitted reports, sorted by severity (prohibited goods > harassment > off-platform attempt > other).
+Each report shows reporter, reported entity (user, flight, bid, message), and free-text claim.
+Quick actions: dismiss, suspend reported user, forward to dispute console, escalate to super-admin.
+6.5.4 Content Management
+This is where the dynamic onboarding video portal and other public-facing content is managed.
+Onboarding videos — list of slides, each with order, EN/BN titles and descriptions, video file (Cloud Storage upload), thumbnail, active flag. Drag-and-drop reorder. Preview rendering identical to user-facing slider.
+Marketing banners and announcement bars — schedule start/end times, link targets, show only to specific roles.
+FAQ entries — question, answer (markdown), category, EN/BN, ordered.
+Prohibited goods policy versions — semantically versioned. Past versions are retained for legal traceability of what policy was in effect at time of any historical bid.
+App config — fee schedule, points pricing tiers, monthly free amount, urgency boost costs, KYC required reason templates. Changes require super-admin and emit an audit_log entry.
+6.6 Audit Trail
+Every admin action — KYC decision, dispute resolution, points adjustment, suspension, content edit, role grant — writes an entry to audit_log. The entry captures: actorUid, action, targetType, targetId, beforeState (where applicable), afterState, reason, timestamp, IP address, user-agent. The audit_log collection is read-only for admins, write-only for service accounts. Super-admins can query but not edit. This collection is what protects the platform if a bad actor reaches admin role and what protects admins if their actions are challenged.
+6.7 Admin UI Patterns — Implementation Notes
+Use the same component library as the consumer app, but with a denser layout — admin work involves processing many records quickly, so favor table density over whitespace.
+Keyboard shortcuts on KYC and dispute queues — J/K for next/prev, A for approve, R for reject. Reduces moderation time meaningfully.
+All long-running admin actions (bulk operations, exports) run as Cloud Functions and report status back via a notifications channel; the admin UI is never blocked on a long operation.
+Admin sessions have shorter idle timeouts (30 minutes) than consumer sessions.
+Two-factor authentication is mandatory for any account with admin or super-admin claim, enforced at sign-in by checking the auth token's MFA factor list.
+
+Appendix A: Phased Build Plan
+This blueprint is large. A four-person team should not attempt to build it all at once. The recommended phasing trades comprehensiveness for time-to-validated-learning.
+Phase 0 — Foundation (Weeks 1-2)
+Repo setup, Firebase project, CI/CD, environment management.
+Auth flow (email/password + Google), basic user profile.
+Firestore security rules skeleton, security tests.
+Admin role grant function and admin shell.
+Phase 1 — KYC + Trust (Weeks 3-4)
+KYC submission flow with capture-only selfie.
+Cloud Storage rules, encryption-at-rest for ID number.
+KYC moderation queue.
+Custom claim plumbing on approve.
+Phase 2 — Core Marketplace (Weeks 5-7)
+Flight posting (without points yet — hardcode free).
+Flight discovery with filters, route key indexing.
+Bid submission and traveler bid management.
+State machines and Cloud Function transitions.
+Phase 3 — Points Economy (Weeks 8-9)
+Points ledger and balance logic.
+Sign-up bonus, monthly free, transaction rewards.
+Bid hold/capture/refund flows.
+Urgency boosts.
+Points purchase via SSLCommerz / iPay88.
+Phase 4 — Transactions & Settlement (Weeks 10-11)
+Transaction creation on AGREED.
+Handoff and delivery confirmation flows.
+Payout release timer and dispute window.
+Rating exchange.
+Phase 5 — Polish & Soft Launch (Weeks 12-13)
+Onboarding video portal CMS and frontend slider.
+Notifications layer (in-app + FCM).
+Bengali localization audit.
+Dispute console MVP.
+Soft launch to 30-50 users on KL-Dhaka corridor.
+Phase 6 — Iterate (Weeks 14+)
+Analytics dashboards driven by real usage patterns.
+Abuse heuristics tuned against actual fraud attempts.
+Fee schedule adjustments.
+Phase-2 KYC vendor integration if volume justifies.
+Capacitor wrap for APK once web product-market-fit signals are clear.
+Appendix B: Key Decisions Already Made
+Recording these here so they don't get re-litigated mid-build:
+Email/password + Google Sign-In auth, no phone OTP for v1 (SMS cost and quotas).
+Single Next.js app for both consumer and admin (operational simplicity).
+Cloud Functions as the trusted compute layer, no separate Node backend.
+Append-only points ledger, balance is denormalized projection.
+Connects-style points economy, not ad-auction.
+PWA first, Capacitor wrap for APK in v2, no native rewrite.
+Bengali + English first-class from day one.
+v1 platform-as-marketplace, not platform-as-carrier — no insurance, no licensed freight forwarding.
+Appendix C: Open Questions for Decision Before Build
+Final platform name and domain — 'SpareKG' is a working title.
+Payment provider for points purchases on the Malaysia side — iPay88 vs Stripe vs Razer Merchant Services. Stripe has the cleanest integration but the highest fees.
+Payout method for travelers — direct bank transfer in MYR vs USD wallet vs platform credit balance. Direct bank is the user preference but operationally heaviest.
+Whether to require recipient phone verification at handoff time, or trust the sender to have verified before listing.
+Whether the Bengali language UI should be the default for users with .bd country detection or whether English remains default with toggle.
+Pre-launch legal review of Terms of Service in both Malaysia and Bangladesh jurisdictions — engage local counsel in each.
+
