@@ -65,7 +65,7 @@ export default function LoginPage() {
         </div>
 
         {/* Login Card */}
-        <div className="glass-card p-8">
+        <div className="glass-card p-6 sm:p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1.5">Email</label>
@@ -135,7 +135,7 @@ export default function LoginPage() {
           {/* Demo credentials hint */}
           <div className="mt-6 pt-5 border-t border-white/5">
             <p className="text-[0.6875rem] text-gray-500 text-center mb-3">Demo Credentials</p>
-            <div className="grid grid-cols-2 gap-2 text-[0.6875rem]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[0.6875rem]">
               <div className="bg-surface-100 rounded-lg p-2.5">
                 <p className="text-gray-400 font-medium">Admin</p>
                 <p className="text-gray-500">admin@sparekg.com</p>

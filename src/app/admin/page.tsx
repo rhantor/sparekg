@@ -116,30 +116,32 @@ export default function AdminDashboard() {
       {/* Route Heatmap */}
       <div className="glass-card p-5">
         <h3 className="text-sm font-semibold text-white mb-4">Route Activity (30d)</h3>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Corridor</th>
-              <th>Priority</th>
-              <th>Live Flights</th>
-              <th>Pending Bids</th>
-              <th>Avg Price/kg</th>
-              <th>Transactions (30d)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {mockRoutes.map(r => (
-              <tr key={r.routeKey}>
-                <td className="font-medium text-white">{r.originCity} → {r.destinationCity}</td>
-                <td>{r.isPriority ? <span className="badge badge-purple">Priority</span> : <span className="badge badge-neutral">Normal</span>}</td>
-                <td>{r.liveFlightCount}</td>
-                <td>{r.pendingBidCount}</td>
-                <td>MYR {r.avgPricePerKg}</td>
-                <td className="font-medium text-white">{r.transactionCount30d}</td>
+        <div className="overflow-x-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Corridor</th>
+                <th>Priority</th>
+                <th>Live Flights</th>
+                <th>Pending Bids</th>
+                <th>Avg Price/kg</th>
+                <th>Transactions (30d)</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {mockRoutes.map(r => (
+                <tr key={r.routeKey}>
+                  <td className="font-medium text-white">{r.originCity} → {r.destinationCity}</td>
+                  <td>{r.isPriority ? <span className="badge badge-purple">Priority</span> : <span className="badge badge-neutral">Normal</span>}</td>
+                  <td>{r.liveFlightCount}</td>
+                  <td>{r.pendingBidCount}</td>
+                  <td>MYR {r.avgPricePerKg}</td>
+                  <td className="font-medium text-white">{r.transactionCount30d}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

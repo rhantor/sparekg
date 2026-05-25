@@ -1,5 +1,5 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, ShieldCheck, Users, Coins, Scale,
-  Flag, FileText, Settings, ClipboardList, Plane, LogOut, ChevronRight, Sun, Moon,
+  Flag, FileText, Settings, ClipboardList, Plane, LogOut, ChevronRight, Sun, Moon, Menu, X,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -29,10 +29,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { theme, toggleTheme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) router.replace('/login');
   }, [isAuthenticated, router]);
+
+  // Close sidebar on route change on mobile
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [pathname]);
 
   if (!isAuthenticated || !user) {
     return (
@@ -45,18 +51,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const filteredNav = NAV_ITEMS.filter(item => !item.superOnly || isSuperAdmin);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-surface-0">
+      {/* Backdrop for mobile */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
-      <aside className="w-[260px] shrink-0 flex flex-col border-r bg-surface-50" style={{ borderColor: 'var(--t-border)' }}>
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-[260px] shrink-0 flex flex-col border-r bg-surface-50 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        style={{ borderColor: 'var(--t-border)' }}
+      >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-5 py-5" style={{ borderBottom: '1px solid var(--t-border)' }}>
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-lg shadow-brand-500/20">
-            <Plane className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between px-5 py-5" style={{ borderBottom: '1px solid var(--t-border)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-lg shadow-brand-500/20">
+              <Plane className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold tracking-tight text-heading">SpareKG</h2>
+              <p className="text-[0.625rem] font-medium uppercase tracking-wider text-muted">Admin Panel</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-bold tracking-tight text-heading">SpareKG</h2>
-            <p className="text-[0.625rem] font-medium uppercase tracking-wider text-muted">Admin Panel</p>
-          </div>
+          {/* Close button for mobile */}
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="p-2 rounded-lg text-muted hover:text-heading hover:bg-surface-100 lg:hidden"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Nav Links */}
@@ -105,20 +138,42 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-surface-0">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={pathname}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.25 }}
-            className="p-6 lg:p-8"
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Mobile Header */}
+        <header
+          className="flex items-center justify-between px-4 py-3 bg-surface-50 border-b lg:hidden"
+          style={{ borderColor: 'var(--t-border)' }}
+        >
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 rounded-lg text-muted hover:text-heading hover:bg-surface-100"
           >
-            {children}
-          </motion.div>
-        </AnimatePresence>
-      </main>
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-lg shadow-brand-500/20">
+              <Plane className="w-4 h-4 text-white" />
+            </div>
+            <span className="text-sm font-bold text-heading">SpareKG</span>
+          </div>
+          <div className="w-10" /> {/* Spacer for symmetry */}
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={pathname}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25 }}
+              className="p-4 md:p-6 lg:p-8"
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
     </div>
   );
 }

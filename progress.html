@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpareKG Progress Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .checkbox-custom {
+            accent-color: #3b82f6;
+            width: 1.25rem;
+            height: 1.25rem;
+            cursor: pointer;
+        }
+        .task-row {
+            transition: background-color 0.2s ease;
+        }
+        .task-row:hover {
+            background-color: #1e293b;
+        }
+        .completed-text {
+            text-decoration: line-through;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body class="p-8 antialiased">
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-10 text-center">
+            <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">SpareKG Progress Tracker</h1>
+            <p class="text-slate-400 text-lg">Peer-to-Peer Excess Baggage Marketplace Implementation Phases</p>
+            <div class="mt-4 inline-flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-full border border-slate-700">
+                <span class="text-sm font-medium text-slate-300">Overall Progress:</span>
+                <span id="progress-text" class="text-sm font-bold text-emerald-400">0%</span>
+                <div class="w-32 h-2 bg-slate-700 rounded-full ml-2 overflow-hidden">
+                    <div id="progress-bar" class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="mt-4">
+                <button id="reset-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">Reset Progress</button>
+            </div>
+        </header>
+
+        <div id="phases-container" class="space-y-8">
+            <!-- Phases will be injected here by JS -->
+        </div>
+    </div>
+
+    <script>
+        const phasesData = [
+            {
+                title: "Phase 0 — Foundation (Weeks 1-2)",
+                tasks: [
+                    { id: "p0-t1", text: "Repo setup, Firebase project, CI/CD, environment management." },
+                    { id: "p0-t2", text: "Auth flow (email/password + Google), basic user profile." },
+                    { id: "p0-t3", text: "Firestore security rules skeleton, security tests." },
+                    { id: "p0-t4", text: "Admin role grant function and admin shell." }
+                ]
+            },
+            {
+                title: "Phase 1 — KYC + Trust (Weeks 3-4)",
+                tasks: [
+                    { id: "p1-t1", text: "KYC submission flow with capture-only selfie." },
+                    { id: "p1-t2", text: "Cloud Storage rules, encryption-at-rest for ID number." },
+                    { id: "p1-t3", text: "KYC moderation queue." },
+                    { id: "p1-t4", text: "Custom claim plumbing on approve." }
+                ]
+            },
+            {
+                title: "Phase 2 — Core Marketplace (Weeks 5-7)",
+                tasks: [
+                    { id: "p2-t1", text: "Flight posting (without points yet — hardcode free)." },
+                    { id: "p2-t2", text: "Flight discovery with filters, route key indexing." },
+                    { id: "p2-t3", text: "Bid submission and traveler bid management." },
+                    { id: "p2-t4", text: "State machines and Cloud Function transitions." }
+                ]
+            },
+            {
+                title: "Phase 3 — Points Economy (Weeks 8-9)",
+                tasks: [
+                    { id: "p3-t1", text: "Points ledger and balance logic." },
+                    { id: "p3-t2", text: "Sign-up bonus, monthly free, transaction rewards." },
+                    { id: "p3-t3", text: "Bid hold/capture/refund flows." },
+                    { id: "p3-t4", text: "Urgency boosts." },
+                    { id: "p3-t5", text: "Points purchase via SSLCommerz / iPay88." }
+                ]
+            },
+            {
+                title: "Phase 4 — Transactions & Settlement (Weeks 10-11)",
+                tasks: [
+                    { id: "p4-t1", text: "Transaction creation on AGREED." },
+                    { id: "p4-t2", text: "Handoff and delivery confirmation flows." },
+                    { id: "p4-t3", text: "Payout release timer and dispute window." },
+                    { id: "p4-t4", text: "Rating exchange." }
+                ]
+            },
+            {
+                title: "Phase 5 — Polish & Soft Launch (Weeks 12-13)",
+                tasks: [
+                    { id: "p5-t1", text: "Onboarding video portal CMS and frontend slider." },
+                    { id: "p5-t2", text: "Notifications layer (in-app + FCM)." },
+                    { id: "p5-t3", text: "Bengali localization audit." },
+                    { id: "p5-t4", text: "Dispute console MVP." },
+                    { id: "p5-t5", text: "Soft launch to 30-50 users on KL-Dhaka corridor." }
+                ]
+            },
+            {
+                title: "Phase 6 — Iterate (Weeks 14+)",
+                tasks: [
+                    { id: "p6-t1", text: "Analytics dashboards driven by real usage patterns." },
+                    { id: "p6-t2", text: "Abuse heuristics tuned against actual fraud attempts." },
+                    { id: "p6-t3", text: "Fee schedule adjustments." },
+                    { id: "p6-t4", text: "Phase-2 KYC vendor integration if volume justifies." },
+                    { id: "p6-t5", text: "Capacitor wrap for APK once web product-market-fit signals are clear." }
+                ]
+            }
+        ];
+
+        const STORAGE_KEY = 'sparekg_progress_tracker';
+        let savedProgress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+
+        function saveProgress() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(savedProgress));
+            updateOverallProgress();
+        }
+
+        function updateOverallProgress() {
+            let totalTasks = 0;
+            let completedTasks = 0;
+
+            phasesData.forEach(phase => {
+                phase.tasks.forEach(task => {
+                    totalTasks++;
+                    if (savedProgress[task.id]) {
+                        completedTasks++;
+                    }
+                });
+            });
+
+            const percentage = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+            
+            document.getElementById('progress-text').innerText = `${percentage}%`;
+            document.getElementById('progress-bar').style.width = `${percentage}%`;
+        }
+
+        function renderPhases() {
+            const container = document.getElementById('phases-container');
+            container.innerHTML = '';
+
+            phasesData.forEach((phase, index) => {
+                const phaseCard = document.createElement('div');
+                phaseCard.className = 'bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg';
+
+                const header = document.createElement('div');
+                header.className = 'px-6 py-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center';
+                
+                // Calculate phase specific progress
+                let phaseTotal = phase.tasks.length;
+                let phaseCompleted = phase.tasks.filter(t => savedProgress[t.id]).length;
+                let isPhaseComplete = phaseTotal === phaseCompleted;
+
+                header.innerHTML = `
+                    <h2 class="text-xl font-semibold text-white flex items-center gap-2">
+                        ${isPhaseComplete ? '<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' : ''}
+                        ${phase.title}
+                    </h2>
+                    <span class="text-sm font-medium ${isPhaseComplete ? 'text-emerald-400' : 'text-slate-400'}">
+                        ${phaseCompleted} / ${phaseTotal}
+                    </span>
+                `;
+
+                const taskList = document.createElement('div');
+                taskList.className = 'p-2';
+
+                phase.tasks.forEach(task => {
+                    const taskRow = document.createElement('label');
+                    const isChecked = savedProgress[task.id] || false;
+                    
+                    taskRow.className = 'task-row flex items-start gap-4 p-4 rounded-lg cursor-pointer group';
+                    
+                    taskRow.innerHTML = `
+                        <div class="pt-0.5">
+                            <input type="checkbox" 
+                                id="${task.id}" 
+                                class="checkbox-custom rounded border-slate-600 bg-slate-900"
+                                ${isChecked ? 'checked' : ''}
+                            >
+                        </div>
+                        <div class="flex-1">
+                            <span class="text-slate-200 group-hover:text-white transition-colors ${isChecked ? 'completed-text' : ''}" id="text-${task.id}">
+                                ${task.text}
+                            </span>
+                        </div>
+                    `;
+
+                    // Add event listener to the checkbox
+                    const checkbox = taskRow.querySelector('input');
+                    checkbox.addEventListener('change', (e) => {
+                        savedProgress[task.id] = e.target.checked;
+                        saveProgress();
+                        
+                        // Toggle text style
+                        const textSpan = taskRow.querySelector(`#text-${task.id}`);
+                        if (e.target.checked) {
+                            textSpan.classList.add('completed-text');
+                        } else {
+                            textSpan.classList.remove('completed-text');
+                        }
+                        
+                        // Re-render header to update phase counts
+                        renderPhases();
+                    });
+
+                    taskList.appendChild(taskRow);
+                });
+
+                phaseCard.appendChild(header);
+                phaseCard.appendChild(taskList);
+                container.appendChild(phaseCard);
+            });
+
+            updateOverallProgress();
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            renderPhases();
+            
+            document.getElementById('reset-btn').addEventListener('click', () => {
+                if (confirm('Are you sure you want to reset all progress?')) {
+                    savedProgress = {};
+                    saveProgress();
+                    renderPhases();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 'use client';
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import type { AdminUser, AdminRole } from './types';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { auth } from './firebase';
+import type { AdminUser } from './types';
 
 interface AuthContextType {
   user: AdminUser | null;
@@ -8,37 +10,54 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Mock admin accounts — swap for Firebase Auth later
-const MOCK_ADMINS: Record<string, { password: string; user: AdminUser }> = {
-  'admin@sparekg.com': {
-    password: 'admin123',
-    user: { uid: 'admin1', email: 'admin@sparekg.com', displayName: 'Admin User', photoUrl: null, role: 'admin' },
-  },
-  'super@sparekg.com': {
-    password: 'super123',
-    user: { uid: 'superadmin1', email: 'super@sparekg.com', displayName: 'Super Admin', photoUrl: null, role: 'super_admin' },
-  },
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AdminUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    // Simulate network delay
-    await new Promise(r => setTimeout(r, 800));
-    const account = MOCK_ADMINS[email];
-    if (account && account.password === password) {
-      setUser(account.user);
-      return true;
-    }
-    return false;
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Fetch custom claims from token
+        const tokenResult = await firebaseUser.getIdTokenResult();
+        const role = tokenResult.claims.admin 
+          ? (tokenResult.claims.superAdmin ? 'super_admin' : 'admin') 
+          : 'admin'; // Fallback for basic setup if claims not set yet
+          
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || 'Admin User',
+          photoUrl: firebaseUser.photoURL,
+          role: role as 'super_admin' | 'admin',
+        });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const logout = useCallback(() => setUser(null), []);
+  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      return true;
+    } catch (error) {
+      console.error('Login failed:', error);
+      return false;
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    await signOut(auth);
+    setUser(null);
+  }, []);
 
   return (
     <AuthContext.Provider value={{
@@ -47,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isSuperAdmin: user?.role === 'super_admin',
       login,
       logout,
+      loading
     }}>
       {children}
     </AuthContext.Provider>

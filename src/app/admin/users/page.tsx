@@ -48,7 +48,7 @@ export default function UsersPage() {
       </div>
 
       {/* Users Table */}
-      <div className="glass-card overflow-hidden">
+      <div className="glass-card overflow-x-auto">
         <table className="data-table">
           <thead>
             <tr>
