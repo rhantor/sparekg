@@ -2,7 +2,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  updateProfile, GoogleAuthProvider, signInWithPopup, signOut, type User as FirebaseUser,
+  updateProfile, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  signOut, type User as FirebaseUser,
 } from 'firebase/auth';
 import { auth } from './firebase';
 import type { AdminUser } from './types';
@@ -78,6 +79,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  // Complete a redirect-based Google sign-in (popup-blocked fallback).
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => { if (result?.user) establishSession(result.user); })
+      .catch((err) => console.warn('Redirect sign-in did not complete:', err));
+  }, []);
+
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
@@ -90,8 +98,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginWithGoogle = useCallback(async (): Promise<RegisterResult> => {
+    const provider = new GoogleAuthProvider();
     try {
-      const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+      const cred = await signInWithPopup(auth, provider);
       await establishSession(cred.user);
       return { ok: true };
     } catch (error) {
@@ -100,10 +109,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         return { ok: false };
       }
+      // Popup blocked by the browser — fall back to a full-page redirect.
+      if (code === 'auth/popup-blocked') {
+        try {
+          await signInWithRedirect(auth, provider); // navigates away
+          return { ok: false };
+        } catch (redirectErr) {
+          console.error('Redirect sign-in failed:', redirectErr);
+        }
+      }
       console.error('Google sign-in failed:', error);
       const msg =
         code === 'auth/unauthorized-domain' ? 'This site isn’t authorized for sign-in yet. Add its domain in Firebase → Authentication → Settings → Authorized domains.'
-        : code === 'auth/popup-blocked' ? 'Your browser blocked the sign-in popup. Allow popups and try again.'
         : code === 'auth/operation-not-allowed' ? 'Google sign-in isn’t enabled in Firebase yet.'
         : 'Google sign-in failed. Please try again.';
       return { ok: false, error: msg };
