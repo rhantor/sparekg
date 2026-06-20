@@ -6,239 +6,259 @@
     <title>SpareKG Progress Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
-            background-color: #0f172a;
-            color: #f8fafc;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        }
-        .checkbox-custom {
-            accent-color: #3b82f6;
-            width: 1.25rem;
-            height: 1.25rem;
-            cursor: pointer;
-        }
-        .task-row {
-            transition: background-color 0.2s ease;
-        }
-        .task-row:hover {
-            background-color: #1e293b;
-        }
-        .completed-text {
-            text-decoration: line-through;
-            color: #64748b;
-        }
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        .checkbox-custom { accent-color: #3b82f6; width: 1.2rem; height: 1.2rem; cursor: pointer; }
+        .task-row { transition: background-color 0.2s ease; }
+        .task-row:hover { background-color: #1e293b; }
+        .completed-text { text-decoration: line-through; color: #64748b; }
     </style>
 </head>
 <body class="p-8 antialiased">
     <div class="max-w-4xl mx-auto">
-        <header class="mb-10 text-center">
+        <header class="mb-8 text-center">
             <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">SpareKG Progress Tracker</h1>
-            <p class="text-slate-400 text-lg">Peer-to-Peer Excess Baggage Marketplace Implementation Phases</p>
+            <p class="text-slate-400 text-lg">Full blueprint coverage &mdash; phases, admin console, architecture &amp; public site</p>
             <div class="mt-4 inline-flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-full border border-slate-700">
-                <span class="text-sm font-medium text-slate-300">Overall Progress:</span>
+                <span class="text-sm font-medium text-slate-300">Overall:</span>
                 <span id="progress-text" class="text-sm font-bold text-emerald-400">0%</span>
                 <div class="w-32 h-2 bg-slate-700 rounded-full ml-2 overflow-hidden">
                     <div id="progress-bar" class="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500" style="width: 0%"></div>
                 </div>
             </div>
-            <div class="mt-4">
-                <button id="reset-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">Reset Progress</button>
+            <div class="mt-4 flex items-center justify-center gap-4 text-xs text-slate-500">
+                <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> done</span>
+                <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> partial &mdash; UI built, backend pending</span>
+                <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-600"></span> not started</span>
             </div>
         </header>
 
-        <div id="phases-container" class="space-y-8">
-            <!-- Phases will be injected here by JS -->
+        <div class="max-w-3xl mx-auto mb-8 p-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-slate-400 leading-relaxed">
+            <strong class="text-slate-200">Where things stand:</strong> The consumer landing, the authenticated app shell
+            (home, flights, bids, profile), and the admin shell are built as polished UI on <em>mock data</em>. The blueprint's
+            engine &mdash; the RTK Query data layer, Cloud Functions, the two state machines, the points ledger, in-app chat,
+            and real Firestore reads &mdash; is the remaining work. Phases 0&ndash;1 are largely done; everything past that is
+            UI-scaffolded or not started.
         </div>
+
+        <div class="max-w-3xl mx-auto mb-10 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-700 bg-slate-800/50">
+                <h2 class="text-lg font-semibold text-white">📣 Update for the team</h2>
+                <p class="text-xs text-slate-500 mt-0.5">Shareable summary &mdash; ~30% through the blueprint.</p>
+            </div>
+            <div class="p-6 space-y-5 text-sm text-slate-300 leading-relaxed">
+                <p><span class="font-semibold text-slate-100">Where we are:</span> The foundation and trust layer are functionally done, the full consumer + admin interface is built, and the Firebase backend is live. The remaining work is wiring the marketplace logic to real data.</p>
+
+                <div>
+                    <p class="font-semibold text-emerald-400 mb-2">✅ Done &amp; working</p>
+                    <ul class="list-disc list-inside space-y-1 text-slate-400">
+                        <li><span class="text-slate-300">Accounts &amp; sign-in</span> &mdash; sign-up, login, Google sign-in, password reset, create/edit profile (photo, phone, payout, home airport).</li>
+                        <li><span class="text-slate-300">KYC / identity verification</span> &mdash; full submission with in-app live selfie, ID-number encryption, and an admin approve/reject moderation queue that grants a verified badge.</li>
+                        <li><span class="text-slate-300">Design</span> &mdash; polished premium travel-brand look (deep navy + teal), smooth animations, consistent icons. Public landing page complete.</li>
+                        <li><span class="text-slate-300">Backend infrastructure</span> &mdash; Firebase Auth, Firestore (security rules + indexes), and Storage deployed and live on the <code class="text-slate-300">sparekg</code> project.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-amber-400 mb-2">🟡 Built as UI, not yet connected to the database (next milestone)</p>
+                    <ul class="list-disc list-inside space-y-1 text-slate-400">
+                        <li>Post a flight (traveler), browse/search flights (sender), place a bid, manage incoming bids. Screens are fully designed and clickable on sample data &mdash; next is making them save &amp; load real data.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-slate-400 mb-2">⬜ Not started yet (later phases)</p>
+                    <ul class="list-disc list-inside space-y-1 text-slate-500">
+                        <li>Points/credits economy, transactions &amp; settlement (handoff, delivery, payouts, ratings), notifications, and the remaining admin dashboards (analytics, disputes, user management).</li>
+                    </ul>
+                </div>
+
+                <p class="pt-1"><span class="font-semibold text-slate-100">Next up:</span> make the marketplace real &mdash; connect flight posting, discovery, and bidding to the live database so a verified user can post a flight and have it appear for senders to bid on.</p>
+            </div>
+        </div>
+
+        <div id="phases-container" class="space-y-8"></div>
     </div>
 
     <script>
+        // done:true = functionally complete. done:false + note = partial (UI built / caveat). done:false, no note = not started.
         const phasesData = [
             {
                 title: "Phase 0 — Foundation (Weeks 1-2)",
                 tasks: [
-                    { id: "p0-t1", text: "Repo setup, Firebase project, CI/CD, environment management." },
-                    { id: "p0-t2", text: "Auth flow (email/password + Google), basic user profile." },
-                    { id: "p0-t3", text: "Firestore security rules skeleton, security tests." },
-                    { id: "p0-t4", text: "Admin role grant function and admin shell." }
+                    { id: "p0-1", text: "Repo, Firebase project, environment management.", done: true, note: "CI/CD pipeline pending (see Architecture)." },
+                    { id: "p0-2", text: "Sign in — email/password + server session cookie.", done: true, note: "Session cookie needs FIREBASE_SERVICE_ACCOUNT_KEY to verify server-side." },
+                    { id: "p0-3", text: "Sign up / registration page.", done: true, note: "Email/password + Google; redirects to /home." },
+                    { id: "p0-4", text: "Google Sign-In.", done: true, note: "On login + signup; requires Google provider enabled in Firebase console." },
+                    { id: "p0-5", text: "Password reset.", done: true },
+                    { id: "p0-6", text: "Create user profile on sign-up.", done: true, note: "onUserCreate seeds the doc; /profile/edit upserts via client SDK." },
+                    { id: "p0-7", text: "Complete / edit profile (photo, payout, languages, home airport).", done: true, note: "/profile/edit writes to Firestore + uploads avatar (storage.rules updated — redeploy needed)." },
+                    { id: "p0-8", text: "Phone number capture (required pre-bid).", done: true, note: "Captured in /profile/edit; pre-bid enforcement comes with Phase 2 wiring." },
+                    { id: "p0-9", text: "Firestore + Storage security-rules skeleton.", done: true, note: "Rules present; automated tests pending (see Architecture)." },
+                    { id: "p0-10", text: "Admin role-grant function and admin shell.", done: true }
                 ]
             },
             {
                 title: "Phase 1 — KYC + Trust (Weeks 3-4)",
                 tasks: [
-                    { id: "p1-t1", text: "KYC submission flow with capture-only selfie." },
-                    { id: "p1-t2", text: "Cloud Storage rules, encryption-at-rest for ID number." },
-                    { id: "p1-t3", text: "KYC moderation queue." },
-                    { id: "p1-t4", text: "Custom claim plumbing on approve." }
+                    { id: "p1-1", text: "KYC submission with capture-only selfie.", done: true, note: "MediaStream capture enforced; liveness head-turn prompt pending." },
+                    { id: "p1-2", text: "Cloud Storage rules, encryption-at-rest for ID number.", done: true, note: "Local AES-256-GCM (blueprint specifies Cloud KMS)." },
+                    { id: "p1-3", text: "KYC moderation queue.", done: true, note: "FIFO list + signed URLs + server-side admin auth; claim/release, name/DOB cross-check, escalate pending." },
+                    { id: "p1-4", text: "Custom claim plumbing on approve.", done: true },
+                    { id: "p1-5", text: "KYC re-submission flow (1-hr cooldown, 3-strike auto-flag).", done: false }
                 ]
             },
             {
                 title: "Phase 2 — Core Marketplace (Weeks 5-7)",
                 tasks: [
-                    { id: "p2-t1", text: "Flight posting (without points yet — hardcode free)." },
-                    { id: "p2-t2", text: "Flight discovery with filters, route key indexing." },
-                    { id: "p2-t3", text: "Bid submission and traveler bid management." },
-                    { id: "p2-t4", text: "State machines and Cloud Function transitions." }
+                    { id: "p2-1", text: "Post a flight (Traveler) — free for now, no points.", done: false, note: "Form built (mock); Firestore write / postFlightCallable pending." },
+                    { id: "p2-2", text: "Browse & discover flights (Sender) — filters + route-key index.", done: false, note: "Browse UI + filters built (mock); Firestore query pending." },
+                    { id: "p2-3", text: "Place a bid (Sender).", done: false, note: "Bid panel built (mock); submitBidCallable pending." },
+                    { id: "p2-4", text: "Manage incoming bids — accept / counter / decline (Traveler).", done: false, note: "Bids UI built (mock); acceptBidCallable + transitions pending." },
+                    { id: "p2-5", text: "Flight & bid state machines (server-enforced).", done: false },
+                    { id: "p2-6", text: "Prohibited-goods policy + canonical categories (hard/soft).", done: false },
+                    { id: "p2-7", text: "In-app chat — unlock post-AGREED, mask phone/email pre-AGREED.", done: false }
                 ]
             },
             {
                 title: "Phase 3 — Points Economy (Weeks 8-9)",
                 tasks: [
-                    { id: "p3-t1", text: "Points ledger and balance logic." },
-                    { id: "p3-t2", text: "Sign-up bonus, monthly free, transaction rewards." },
-                    { id: "p3-t3", text: "Bid hold/capture/refund flows." },
-                    { id: "p3-t4", text: "Urgency boosts." },
-                    { id: "p3-t5", text: "Points purchase via SSLCommerz / iPay88." }
+                    { id: "p3-1", text: "Points ledger and balance logic (append-only).", done: false },
+                    { id: "p3-2", text: "Sign-up bonus, monthly free (capped), transaction rewards.", done: false, note: "onUserCreate seeds a flat balance; no ledger / monthly logic yet." },
+                    { id: "p3-3", text: "Bid hold / capture / refund flows.", done: false },
+                    { id: "p3-4", text: "Urgency boosts (levels 1-3, time-bound).", done: false },
+                    { id: "p3-5", text: "Featured flight listing.", done: false },
+                    { id: "p3-6", text: "Points purchase via SSLCommerz / iPay88 (+ bulk tiers).", done: false }
                 ]
             },
             {
                 title: "Phase 4 — Transactions & Settlement (Weeks 10-11)",
                 tasks: [
-                    { id: "p4-t1", text: "Transaction creation on AGREED." },
-                    { id: "p4-t2", text: "Handoff and delivery confirmation flows." },
-                    { id: "p4-t3", text: "Payout release timer and dispute window." },
-                    { id: "p4-t4", text: "Rating exchange." }
+                    { id: "p4-1", text: "Transaction creation on AGREED.", done: false },
+                    { id: "p4-2", text: "Handoff flow — manifest, photos, digital receipt.", done: false },
+                    { id: "p4-3", text: "Delivery confirmation with recipient code.", done: false },
+                    { id: "p4-4", text: "Payout release timer and dispute window.", done: false },
+                    { id: "p4-5", text: "Two-way rating exchange.", done: false }
                 ]
             },
             {
                 title: "Phase 5 — Polish & Soft Launch (Weeks 12-13)",
                 tasks: [
-                    { id: "p5-t1", text: "Onboarding video portal CMS and frontend slider." },
-                    { id: "p5-t2", text: "Notifications layer (in-app + FCM)." },
-                    { id: "p5-t3", text: "Bengali localization audit." },
-                    { id: "p5-t4", text: "Dispute console MVP." },
-                    { id: "p5-t5", text: "Soft launch to 30-50 users on KL-Dhaka corridor." }
+                    { id: "p5-1", text: "New-user onboarding carousel (4-screen video portal).", done: false },
+                    { id: "p5-2", text: "Notifications layer (in-app + FCM).", done: false },
+                    { id: "p5-3", text: "Dispute console (admin) MVP.", done: false, note: "Admin disputes page is mock UI." },
+                    { id: "p5-4", text: "Soft launch to 30-50 users on KL-Dhaka corridor.", done: false }
                 ]
             },
             {
                 title: "Phase 6 — Iterate (Weeks 14+)",
                 tasks: [
-                    { id: "p6-t1", text: "Analytics dashboards driven by real usage patterns." },
-                    { id: "p6-t2", text: "Abuse heuristics tuned against actual fraud attempts." },
-                    { id: "p6-t3", text: "Fee schedule adjustments." },
-                    { id: "p6-t4", text: "Phase-2 KYC vendor integration if volume justifies." },
-                    { id: "p6-t5", text: "Capacitor wrap for APK once web product-market-fit signals are clear." }
+                    { id: "p6-1", text: "Abuse heuristics (nightly flagging job).", done: false },
+                    { id: "p6-2", text: "Fee schedule adjustments.", done: false },
+                    { id: "p6-3", text: "Phase-2 KYC vendor integration if volume justifies.", done: false },
+                    { id: "p6-4", text: "Capacitor wrap for APK once web PMF signals are clear.", done: false }
+                ]
+            },
+            {
+                title: "Admin Console (§6) — beyond KYC & disputes",
+                tasks: [
+                    { id: "ad-1", text: "User management — search, suspend/unsuspend, force re-KYC, soft-delete.", done: false, note: "Admin users pages are mock UI." },
+                    { id: "ad-2", text: "Reports triage (prohibited goods / harassment / off-platform).", done: false, note: "Admin reports page is mock UI." },
+                    { id: "ad-3", text: "Economy oversight — dashboard + ledger audit + reconciliation.", done: false, note: "Admin economy page is mock UI." },
+                    { id: "ad-4", text: "Platform analytics — KPI strip, route heatmap, funnels, retention.", done: false, note: "Admin dashboard is mock UI." },
+                    { id: "ad-5", text: "Content management — onboarding videos, banners, FAQ, policy versions, app_config.", done: false, note: "Admin content/settings pages are mock UI." },
+                    { id: "ad-6", text: "Audit-trail viewer (read-only).", done: false, note: "audit_log writes exist for KYC approve; console is mock UI." },
+                    { id: "ad-7", text: "Admin 2FA / MFA (mandatory at sign-in).", done: false }
+                ]
+            },
+            {
+                title: "Architecture & Infrastructure (§4)",
+                tasks: [
+                    { id: "ar-1", text: "RTK Query + Firebase baseQuery data layer + slices.", done: false, note: "Mandated by blueprint; currently using React Context + mock data." },
+                    { id: "ar-2", text: "firestore.indexes.json composite indexes.", done: true, note: "All §3.5 indexes defined; deploy with firebase deploy --only firestore:indexes." },
+                    { id: "ar-3", text: "PWA / installable manifest.", done: false },
+                    { id: "ar-4", text: "CI/CD pipeline.", done: false },
+                    { id: "ar-5", text: "Automated Firestore security-rule tests.", done: false }
+                ]
+            },
+            {
+                title: "Public Site & Consumer UI",
+                tasks: [
+                    { id: "pu-1", text: "Marketing landing (hero, how-it-works, videos, feeds, trust, beta, about).", done: true },
+                    { id: "pu-2", text: "Authenticated app shell (home, flights, bids, profile + nav).", done: true, note: "UI on mock data; real reads pending (see Phase 2 / Architecture)." },
+                    { id: "pu-3", text: "About / FAQ pages.", done: false },
+                    { id: "pu-4", text: "Terms of Service / liability-cap page.", done: false }
                 ]
             }
         ];
 
-        const STORAGE_KEY = 'sparekg_progress_tracker';
-        let savedProgress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-
-        function saveProgress() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(savedProgress));
-            updateOverallProgress();
-        }
+        function statusOf(t) { return t.done ? 'done' : (t.note ? 'partial' : 'todo'); }
 
         function updateOverallProgress() {
-            let totalTasks = 0;
-            let completedTasks = 0;
-
-            phasesData.forEach(phase => {
-                phase.tasks.forEach(task => {
-                    totalTasks++;
-                    if (savedProgress[task.id]) {
-                        completedTasks++;
-                    }
-                });
-            });
-
-            const percentage = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
-            
-            document.getElementById('progress-text').innerText = `${percentage}%`;
-            document.getElementById('progress-bar').style.width = `${percentage}%`;
+            let total = 0, done = 0;
+            phasesData.forEach(p => p.tasks.forEach(t => { total++; if (t.done) done++; }));
+            const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+            document.getElementById('progress-text').innerText = pct + '%';
+            document.getElementById('progress-bar').style.width = pct + '%';
         }
 
         function renderPhases() {
             const container = document.getElementById('phases-container');
             container.innerHTML = '';
 
-            phasesData.forEach((phase, index) => {
-                const phaseCard = document.createElement('div');
-                phaseCard.className = 'bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg';
+            phasesData.forEach(phase => {
+                const card = document.createElement('div');
+                card.className = 'bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg';
+
+                const total = phase.tasks.length;
+                const completed = phase.tasks.filter(t => t.done).length;
+                const partial = phase.tasks.filter(t => !t.done && t.note).length;
+                const isComplete = total === completed;
 
                 const header = document.createElement('div');
                 header.className = 'px-6 py-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center';
-                
-                // Calculate phase specific progress
-                let phaseTotal = phase.tasks.length;
-                let phaseCompleted = phase.tasks.filter(t => savedProgress[t.id]).length;
-                let isPhaseComplete = phaseTotal === phaseCompleted;
-
                 header.innerHTML = `
                     <h2 class="text-xl font-semibold text-white flex items-center gap-2">
-                        ${isPhaseComplete ? '<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' : ''}
+                        ${isComplete ? '<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' : ''}
                         ${phase.title}
                     </h2>
-                    <span class="text-sm font-medium ${isPhaseComplete ? 'text-emerald-400' : 'text-slate-400'}">
-                        ${phaseCompleted} / ${phaseTotal}
-                    </span>
-                `;
+                    <span class="text-sm font-medium ${isComplete ? 'text-emerald-400' : 'text-slate-400'}">
+                        ${completed} / ${total}${partial ? ` · ${partial} partial` : ''}
+                    </span>`;
 
-                const taskList = document.createElement('div');
-                taskList.className = 'p-2';
+                const list = document.createElement('div');
+                list.className = 'p-2';
 
                 phase.tasks.forEach(task => {
-                    const taskRow = document.createElement('label');
-                    const isChecked = savedProgress[task.id] || false;
-                    
-                    taskRow.className = 'task-row flex items-start gap-4 p-4 rounded-lg cursor-pointer group';
-                    
-                    taskRow.innerHTML = `
+                    const status = statusOf(task);
+                    const dot = status === 'done' ? 'bg-emerald-500' : status === 'partial' ? 'bg-amber-500' : 'bg-slate-600';
+                    const row = document.createElement('label');
+                    row.className = 'task-row flex items-start gap-4 p-4 rounded-lg cursor-pointer group';
+                    row.innerHTML = `
                         <div class="pt-0.5">
-                            <input type="checkbox" 
-                                id="${task.id}" 
-                                class="checkbox-custom rounded border-slate-600 bg-slate-900"
-                                ${isChecked ? 'checked' : ''}
-                            >
+                            <input type="checkbox" class="checkbox-custom rounded border-slate-600 bg-slate-900" ${task.done ? 'checked' : ''}>
                         </div>
                         <div class="flex-1">
-                            <span class="text-slate-200 group-hover:text-white transition-colors ${isChecked ? 'completed-text' : ''}" id="text-${task.id}">
-                                ${task.text}
+                            <span class="flex items-center gap-2 text-slate-200 group-hover:text-white transition-colors ${task.done ? 'completed-text' : ''}">
+                                <span class="w-2 h-2 rounded-full shrink-0 ${dot}"></span>${task.text}
                             </span>
-                        </div>
-                    `;
-
-                    // Add event listener to the checkbox
-                    const checkbox = taskRow.querySelector('input');
-                    checkbox.addEventListener('change', (e) => {
-                        savedProgress[task.id] = e.target.checked;
-                        saveProgress();
-                        
-                        // Toggle text style
-                        const textSpan = taskRow.querySelector(`#text-${task.id}`);
-                        if (e.target.checked) {
-                            textSpan.classList.add('completed-text');
-                        } else {
-                            textSpan.classList.remove('completed-text');
-                        }
-                        
-                        // Re-render header to update phase counts
+                            ${task.note ? `<span class="block text-xs text-slate-500 mt-1 ml-4">${task.note}</span>` : ''}
+                        </div>`;
+                    row.querySelector('input').addEventListener('change', (e) => {
+                        task.done = e.target.checked;
                         renderPhases();
                     });
-
-                    taskList.appendChild(taskRow);
+                    list.appendChild(row);
                 });
 
-                phaseCard.appendChild(header);
-                phaseCard.appendChild(taskList);
-                container.appendChild(phaseCard);
+                card.appendChild(header);
+                card.appendChild(list);
+                container.appendChild(card);
             });
 
             updateOverallProgress();
         }
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            renderPhases();
-            
-            document.getElementById('reset-btn').addEventListener('click', () => {
-                if (confirm('Are you sure you want to reset all progress?')) {
-                    savedProgress = {};
-                    saveProgress();
-                    renderPhases();
-                }
-            });
-        });
+        document.addEventListener('DOMContentLoaded', renderPhases);
     </script>
 </body>
 </html>

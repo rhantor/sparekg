@@ -69,3 +69,47 @@ export const makeSuperAdmin = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError('internal', 'Error granting claims');
   }
 });
+
+/**
+ * onKycApproved: Triggers when a KYC submission document is updated.
+ * If the status changes to APPROVED, it grants the kycApproved custom claim
+ * to the user and logs the action to the audit_log.
+ */
+export const onKycApproved = functions.firestore.document('kyc_submissions/{submissionId}')
+  .onUpdate(async (event) => {
+    const newData = event.data.after.data();
+    const prevData = event.data.before.data();
+    
+    // Only proceed if status just changed to APPROVED
+    if (newData.status === 'APPROVED' && prevData.status !== 'APPROVED') {
+      const db = admin.firestore();
+      const userId = newData.userId;
+      
+      console.log(`Processing KYC approval for user: ${userId}`);
+
+      try {
+        // 1. Fetch current user claims
+        const userRecord = await admin.auth().getUser(userId);
+        const currentClaims = userRecord.customClaims || {};
+        
+        // 2. Set kycApproved claim to true
+        await admin.auth().setCustomUserClaims(userId, {
+          ...currentClaims,
+          kycApproved: true
+        });
+
+        // 3. Write to audit_log
+        await db.collection('audit_log').add({
+          action: 'KYC_APPROVED',
+          adminId: newData.assignedAdminId,
+          targetUserId: userId,
+          submissionId: event.params.submissionId,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`Successfully granted kycApproved claim to ${userId}`);
+      } catch (error) {
+        console.error(`Error processing KYC approval for ${userId}:`, error);
+      }
+    }
+  });

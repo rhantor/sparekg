@@ -25,7 +25,83 @@
   --color-danger: #ef4444;
   --color-info: #3b82f6;
 
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* ---- Public / user-site palette (premium travel brand) ----
+     Deep navy + teal primary + ocean-blue secondary on warm neutrals. */
+  --color-navy: #0b1d33;        /* deep navy — dark panels, headings */
+  --color-navy-900: #071524;    /* deepest navy for gradients */
+  --color-navy-700: #14304f;
+
+  --color-teal: #0d9488;        /* primary brand accent */
+  --color-teal-500: #14b8a6;
+  --color-teal-700: #0f766e;
+
+  --color-ocean: #2563eb;       /* secondary (traveler side) */
+  --color-ocean-700: #1d4ed8;
+
+  --color-leaf: #15803d;        /* success / live */
+  --color-gold: #f59e0b;        /* rating stars only */
+
+  --color-ink: #18222e;         /* body text */
+  --color-ash: #5b6471;         /* muted text (warm slate) */
+  --color-sand: #f7f5f1;        /* warm section background */
+  --color-paper: #ffffff;       /* cards */
+  --color-line: #e7e3da;        /* warm hairline border */
+
+  /* ---- Fonts ---- */
+  /* Admin default (Inter); display = Space Grotesk; body = Inter (public site) */
+  --font-sans: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-space-grotesk), 'Space Grotesk', system-ui, sans-serif;
+  --font-body: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* ---- Refined light shadows (public site) ---- */
+  --shadow-soft: 0 1px 2px rgba(11, 29, 51, 0.04), 0 6px 20px rgba(11, 29, 51, 0.06);
+  --shadow-float: 0 12px 40px rgba(11, 29, 51, 0.12);
+}
+
+/* ============================================================
+   PUBLIC SITE BASE — premium, light & clean
+   Opt-in via the `.site` class so the admin theme is untouched.
+   ============================================================ */
+.site {
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  background: #fff;
+  letter-spacing: -0.011em;
+}
+.site h1, .site h2, .site h3, .site .font-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--color-navy);
+}
+
+/* Horizontal marquee for the live-bids ticker */
+.marquee {
+  display: flex;
+  white-space: nowrap;
+  animation: marquee 22s linear infinite;
+}
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* Hero flight-path: flowing dashes + pulsing pins */
+.flight-arc { animation: dash-flow 1.3s linear infinite; }
+@keyframes dash-flow { to { stroke-dashoffset: -14; } }
+
+.ha-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ha-ping 2.6s ease-out infinite;
+}
+@keyframes ha-ping {
+  0% { transform: scale(1); opacity: 0.5; }
+  80%, 100% { transform: scale(2.6); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee, .flight-arc, .ha-ping { animation: none !important; }
 }
 
 /* ============================================================

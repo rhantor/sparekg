@@ -3,26 +3,28 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Plane, Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Plane, Lock, Mail, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
-export default function LoginPage() {
+export default function SignupPage() {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login, loginWithGoogle } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!name.trim()) return setError('Please enter your name.');
     setLoading(true);
-    const ok = await login(email, password);
+    const res = await register(email, password, name.trim());
     setLoading(false);
-    if (ok) router.replace('/home');
-    else setError('Invalid email or password.');
+    if (res.ok) router.replace('/home');
+    else setError(res.error || 'Could not create your account.');
   };
 
   const handleGoogle = async () => {
@@ -37,14 +39,14 @@ export default function LoginPage() {
   const inputCls = 'w-full pl-11 pr-3 py-2.5 rounded-lg border border-line bg-white text-navy text-sm outline-none focus:border-teal placeholder:text-ash/60';
 
   return (
-    <div className="site min-h-screen flex items-center justify-center bg-gradient-to-b from-sand to-white px-4">
+    <div className="site min-h-screen flex items-center justify-center bg-gradient-to-b from-sand to-white px-4 py-10">
       <div className="w-full max-w-[400px]">
         <div className="text-center mb-7">
           <Link href="/" className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-navy mb-4">
             <Plane className="w-7 h-7 text-teal-500" />
           </Link>
-          <h1 className="font-display text-2xl font-semibold text-navy">Welcome back</h1>
-          <p className="text-sm text-ash mt-1">Sign in to your SpareKG account</p>
+          <h1 className="font-display text-2xl font-semibold text-navy">Create your account</h1>
+          <p className="text-sm text-ash mt-1">Join the SpareKG community — it&apos;s free</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-line shadow-soft p-6 sm:p-7">
@@ -53,7 +55,7 @@ export default function LoginPage() {
             disabled={googleLoading}
             className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-lg border border-line font-medium text-navy hover:bg-sand transition-colors disabled:opacity-50 mb-5"
           >
-            <GoogleIcon /> {googleLoading ? 'Connecting…' : 'Continue with Google'}
+            <GoogleIcon /> {googleLoading ? 'Connecting…' : 'Sign up with Google'}
           </button>
 
           <div className="flex items-center gap-3 mb-5">
@@ -64,6 +66,11 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="relative">
+              <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ash" />
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+                className={inputCls} placeholder="Full name" required />
+            </div>
+            <div className="relative">
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ash" />
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                 className={inputCls} placeholder="you@email.com" required />
@@ -71,15 +78,12 @@ export default function LoginPage() {
             <div className="relative">
               <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ash" />
               <input type={showPassword ? 'text' : 'password'} value={password}
-                onChange={(e) => setPassword(e.target.value)} className={`${inputCls} pr-10`} placeholder="Password" required />
+                onChange={(e) => setPassword(e.target.value)} className={`${inputCls} pr-10`}
+                placeholder="Password (min 6 characters)" required />
               <button type="button" onClick={() => setShowPassword((p) => !p)}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ash hover:text-navy">
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
-            </div>
-
-            <div className="flex justify-end">
-              <Link href="/forgot-password" className="text-xs font-medium text-teal hover:text-teal-700">Forgot password?</Link>
             </div>
 
             {error && (
@@ -90,13 +94,17 @@ export default function LoginPage() {
 
             <button type="submit" disabled={loading}
               className="w-full py-3 rounded-xl bg-navy text-white font-semibold hover:bg-navy-700 transition-colors disabled:opacity-50">
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? 'Creating account…' : 'Create account'}
             </button>
           </form>
+
+          <p className="text-[0.7rem] text-ash text-center mt-4">
+            You&apos;ll verify your identity (KYC) before posting or bidding.
+          </p>
         </div>
 
         <p className="text-center text-sm text-ash mt-6">
-          New to SpareKG? <Link href="/signup" className="font-semibold text-teal hover:text-teal-700">Create an account</Link>
+          Already have an account? <Link href="/login" className="font-semibold text-teal hover:text-teal-700">Sign in</Link>
         </p>
       </div>
     </div>
