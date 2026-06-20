@@ -16,7 +16,7 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   kycApproved: boolean;
   login: (email: string, password: string) => Promise<boolean>;
-  loginWithGoogle: () => Promise<boolean>;
+  loginWithGoogle: () => Promise<RegisterResult>;
   register: (email: string, password: string, displayName: string) => Promise<RegisterResult>;
   logout: () => void;
   loading: boolean;
@@ -89,14 +89,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loginWithGoogle = useCallback(async (): Promise<boolean> => {
+  const loginWithGoogle = useCallback(async (): Promise<RegisterResult> => {
     try {
       const cred = await signInWithPopup(auth, new GoogleAuthProvider());
       await establishSession(cred.user);
-      return true;
+      return { ok: true };
     } catch (error) {
+      const code = (error as { code?: string }).code || '';
+      // User closed the popup — benign, don't surface an error.
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        return { ok: false };
+      }
       console.error('Google sign-in failed:', error);
-      return false;
+      const msg =
+        code === 'auth/unauthorized-domain' ? 'This site isn’t authorized for sign-in yet. Add its domain in Firebase → Authentication → Settings → Authorized domains.'
+        : code === 'auth/popup-blocked' ? 'Your browser blocked the sign-in popup. Allow popups and try again.'
+        : code === 'auth/operation-not-allowed' ? 'Google sign-in isn’t enabled in Firebase yet.'
+        : 'Google sign-in failed. Please try again.';
+      return { ok: false, error: msg };
     }
   }, []);
 

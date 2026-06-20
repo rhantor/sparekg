@@ -30,10 +30,10 @@ export default function SignupPage() {
   const handleGoogle = async () => {
     setError('');
     setGoogleLoading(true);
-    const ok = await loginWithGoogle();
+    const res = await loginWithGoogle();
     setGoogleLoading(false);
-    if (ok) router.replace('/home');
-    else setError('Google sign-in failed or was cancelled.');
+    if (res.ok) router.replace('/home');
+    else if (res.error) setError(res.error);
   };
 
   const inputCls = 'w-full pl-11 pr-3 py-2.5 rounded-lg border border-line bg-white text-navy text-sm outline-none focus:border-teal placeholder:text-ash/60';
