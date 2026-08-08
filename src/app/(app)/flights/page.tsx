@@ -1,9 +1,11 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Search, SlidersHorizontal, AlertCircle } from 'lucide-react';
 import { PageHeader } from '@/components/app/PageHeader';
 import { FlightCard } from '@/components/app/FlightCard';
-import { browseFlights } from '@/lib/app-samples';
+import { useAuth } from '@/lib/auth-context';
+import { useListFlightsQuery } from '@/lib/store/api';
+import { toAppFlight } from '@/lib/view-models';
 
 const DESTINATIONS = ['All destinations', 'Dhaka', 'Chittagong', 'Sylhet'];
 const SORTS = [
@@ -13,30 +15,37 @@ const SORTS = [
 ];
 
 export default function FlightsPage() {
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [dest, setDest] = useState(DESTINATIONS[0]);
   const [sort, setSort] = useState('price');
 
+  // Route/date filtering happens in Firestore; the free-text search and sort are
+  // applied here because they don't map to an index and the page size is small.
+  const { data, isLoading, isError, error } = useListFlightsQuery();
+
   const flights = useMemo(() => {
-    let list = browseFlights.filter((f) => {
-      const q = query.trim().toLowerCase();
-      const matchQ =
-        !q ||
-        f.travelerName.toLowerCase().includes(q) ||
-        f.origin.toLowerCase().includes(q) ||
-        f.destination.toLowerCase().includes(q) ||
-        f.originCode.toLowerCase().includes(q) ||
-        f.destinationCode.toLowerCase().includes(q);
-      const matchDest = dest === DESTINATIONS[0] || f.destination === dest;
-      return matchQ && matchDest;
-    });
-    list = [...list].sort((a, b) => {
+    const list = (data ?? [])
+      .map((f) => toAppFlight(f, user?.uid))
+      .filter((f) => {
+        const q = query.trim().toLowerCase();
+        const matchQ =
+          !q ||
+          f.travelerName.toLowerCase().includes(q) ||
+          f.origin.toLowerCase().includes(q) ||
+          f.destination.toLowerCase().includes(q) ||
+          f.originCode.toLowerCase().includes(q) ||
+          f.destinationCode.toLowerCase().includes(q);
+        const matchDest = dest === DESTINATIONS[0] || f.destination === dest;
+        return matchQ && matchDest;
+      });
+
+    return [...list].sort((a, b) => {
       if (sort === 'price') return a.pricePerKg - b.pricePerKg;
       if (sort === 'capacity') return b.kgLeft - a.kgLeft;
       return a.bids - b.bids;
     });
-    return list;
-  }, [query, dest, sort]);
+  }, [data, user?.uid, query, dest, sort]);
 
   const selectCls =
     'px-3 py-2.5 rounded-lg border border-line bg-white text-navy text-sm outline-none focus:border-teal';
@@ -64,21 +73,37 @@ export default function FlightsPage() {
         </select>
       </div>
 
-      <div className="flex items-center gap-2 text-sm text-ash mb-4">
-        <SlidersHorizontal className="w-4 h-4" />
-        {flights.length} {flights.length === 1 ? 'flight' : 'flights'} found
-      </div>
-
-      {flights.length > 0 ? (
+      {isLoading ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {flights.map((f) => (
-            <FlightCard key={f.id} flight={f} />
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-72 rounded-2xl border border-line bg-white/60 animate-pulse" />
           ))}
         </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-line p-10 text-center text-ash">
-          No flights match your filters. Try widening your search.
+      ) : isError ? (
+        <div className="bg-white rounded-2xl border border-line p-10 text-center">
+          <AlertCircle className="w-6 h-6 text-rose-500 mx-auto mb-3" />
+          <p className="text-navy font-medium mb-1">Couldn&apos;t load flights</p>
+          <p className="text-sm text-ash">{error?.message ?? 'Please try again in a moment.'}</p>
         </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 text-sm text-ash mb-4">
+            <SlidersHorizontal className="w-4 h-4" />
+            {flights.length} {flights.length === 1 ? 'flight' : 'flights'} found
+          </div>
+
+          {flights.length > 0 ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {flights.map((f) => (
+                <FlightCard key={f.id} flight={f} />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-line p-10 text-center text-ash">
+              No flights match your filters. Try widening your search.
+            </div>
+          )}
+        </>
       )}
     </div>
   );

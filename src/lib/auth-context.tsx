@@ -6,7 +6,7 @@ import {
   signOut, type User as FirebaseUser,
 } from 'firebase/auth';
 import { auth } from './firebase';
-import type { AdminUser } from './types';
+import type { AdminRole, AdminUser } from './types';
 
 interface RegisterResult { ok: boolean; error?: string }
 
@@ -55,9 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (firebaseUser) {
         const tokenResult = await firebaseUser.getIdTokenResult();
         const admin = tokenResult.claims.admin === true;
-        const role = admin
-          ? (tokenResult.claims.superAdmin ? 'super_admin' : 'admin')
-          : 'admin'; // Fallback for basic setup if claims not set yet
+        // No fallback: absent claims mean "not an admin". Defaulting to a role
+        // here would have every signed-in user render as staff.
+        const role: AdminRole | null = admin
+          ? (tokenResult.claims.superAdmin === true ? 'super_admin' : 'admin')
+          : null;
 
         setIsAdmin(admin);
         setKycApproved(tokenResult.claims.kycApproved === true);
@@ -66,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: firebaseUser.email || '',
           displayName: firebaseUser.displayName || 'New User',
           photoUrl: firebaseUser.photoURL,
-          role: role as 'super_admin' | 'admin',
+          role,
         });
       } else {
         setUser(null);

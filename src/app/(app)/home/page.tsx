@@ -1,17 +1,13 @@
+'use client';
 import Link from 'next/link';
 import { Coins, Star, Plane, ShieldCheck, PlusCircle, Search, ArrowRight, Layers } from 'lucide-react';
 import { PageHeader } from '@/components/app/PageHeader';
 import { FlightCard } from '@/components/app/FlightCard';
 import { StatusBadge } from '@/components/app/StatusBadge';
 import { Avatar } from '@/components/ui/Avatar';
-import { currentUser, myFlights, myBids } from '@/lib/app-samples';
-
-const STATS = [
-  { icon: Coins, label: 'Points balance', value: `${currentUser.points}`, sub: `${currentUser.promo} promo`, tint: 'bg-teal/10 text-teal' },
-  { icon: Star, label: 'Your rating', value: currentUser.rating.toFixed(1), sub: `${currentUser.ratingCount} reviews`, tint: 'bg-gold/10 text-amber-600' },
-  { icon: Plane, label: 'Trips completed', value: `${currentUser.tripsAsTraveler + currentUser.tripsAsSender}`, sub: `${currentUser.tripsAsTraveler} carried`, tint: 'bg-ocean/10 text-ocean' },
-  { icon: ShieldCheck, label: 'Identity', value: 'Verified', sub: 'KYC approved', tint: 'bg-leaf/10 text-leaf' },
-];
+import { useAuth } from '@/lib/auth-context';
+import { useGetUserQuery, useMyFlightsQuery, useMyBidsQuery } from '@/lib/store/api';
+import { toAppFlight, toAppBid } from '@/lib/view-models';
 
 const ACTIONS = [
   { href: '/flights/new', icon: PlusCircle, title: 'Post a flight', desc: 'List your spare luggage capacity' },
@@ -20,15 +16,60 @@ const ACTIONS = [
 ];
 
 export default function HomePage() {
-  const activeFlights = myFlights.filter((f) => f.status === 'LIVE');
+  const { user, kycApproved } = useAuth();
+  const uid = user?.uid ?? '';
+
+  const { data: profile } = useGetUserQuery(uid, { skip: !uid });
+  const { data: flights, isLoading: flightsLoading } = useMyFlightsQuery(uid, { skip: !uid });
+  const { data: bids } = useMyBidsQuery(uid, { skip: !uid });
+
+  const activeFlights = (flights ?? [])
+    .filter((f) => f.status === 'LIVE')
+    .map((f) => toAppFlight(f, uid));
+
+  const recentBids = (bids ?? []).slice(0, 5).map((b) => toAppBid(b, 'sender'));
+
+  const trips = (profile?.completedTripsAsTraveler ?? 0) + (profile?.completedTripsAsSender ?? 0);
+  const firstName = (profile?.displayName ?? user?.displayName ?? 'there').split(' ')[0];
+
+  const stats = [
+    {
+      icon: Coins,
+      label: 'Points balance',
+      value: `${profile?.pointsBalance ?? 0}`,
+      sub: `${profile?.promoBalance ?? 0} promo`,
+      tint: 'bg-teal/10 text-teal',
+    },
+    {
+      icon: Star,
+      label: 'Your rating',
+      value: profile?.ratingCount ? profile.averageRating.toFixed(1) : '—',
+      sub: `${profile?.ratingCount ?? 0} reviews`,
+      tint: 'bg-gold/10 text-amber-600',
+    },
+    {
+      icon: Plane,
+      label: 'Trips completed',
+      value: `${trips}`,
+      sub: `${profile?.completedTripsAsTraveler ?? 0} carried`,
+      tint: 'bg-ocean/10 text-ocean',
+    },
+    {
+      icon: ShieldCheck,
+      label: 'Identity',
+      value: kycApproved ? 'Verified' : 'Unverified',
+      sub: kycApproved ? 'KYC approved' : 'Verification pending',
+      tint: kycApproved ? 'bg-leaf/10 text-leaf' : 'bg-amber-500/10 text-amber-600',
+    },
+  ];
 
   return (
     <div>
-      <PageHeader title={`Welcome back, ${currentUser.name.split(' ')[0]}`} subtitle="Here's what's happening with your trips." />
+      <PageHeader title={`Welcome back, ${firstName}`} subtitle="Here's what's happening with your trips." />
 
       {/* stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {STATS.map((s) => {
+        {stats.map((s) => {
           const Icon = s.icon;
           return (
             <div key={s.label} className="bg-white rounded-2xl border border-line shadow-soft p-5">
@@ -69,7 +110,13 @@ export default function HomePage() {
           Post a flight <PlusCircle className="w-4 h-4" />
         </Link>
       </div>
-      {activeFlights.length > 0 ? (
+      {flightsLoading ? (
+        <div className="grid md:grid-cols-2 gap-5 mb-9">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-72 rounded-2xl border border-line bg-white/60 animate-pulse" />
+          ))}
+        </div>
+      ) : activeFlights.length > 0 ? (
         <div className="grid md:grid-cols-2 gap-5 mb-9">
           {activeFlights.map((f) => (
             <FlightCard key={f.id} flight={f} />
@@ -88,21 +135,27 @@ export default function HomePage() {
           View all <ArrowRight className="w-4 h-4" />
         </Link>
       </div>
-      <div className="bg-white rounded-2xl border border-line shadow-soft divide-y divide-line overflow-hidden">
-        {myBids.map((b) => (
-          <Link key={b.id} href={`/flights/${b.flightId}`} className="flex items-center gap-4 p-4 hover:bg-sand transition-colors">
-            <Avatar name={b.counterpartyName} color={b.counterpartyColor} size={38} />
-            <div className="flex-1 min-w-0">
-              <div className="font-medium text-navy text-sm">{b.counterpartyName}</div>
-              <div className="text-xs text-ash truncate">{b.route} · {b.kg} KG · {b.item}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-sm font-semibold text-navy">RM {b.offeredTotal}</div>
-              <div className="mt-1"><StatusBadge status={b.status} /></div>
-            </div>
-          </Link>
-        ))}
-      </div>
+      {recentBids.length > 0 ? (
+        <div className="bg-white rounded-2xl border border-line shadow-soft divide-y divide-line overflow-hidden">
+          {recentBids.map((b) => (
+            <Link key={b.id} href={`/flights/${b.flightId}`} className="flex items-center gap-4 p-4 hover:bg-sand transition-colors">
+              <Avatar name={b.counterpartyName} color={b.counterpartyColor} size={38} />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-navy text-sm">{b.counterpartyName}</div>
+                <div className="text-xs text-ash truncate">{b.kg} KG · {b.item}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-semibold text-navy">RM {b.offeredTotal}</div>
+                <div className="mt-1"><StatusBadge status={b.status} /></div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-line p-8 text-center text-ash">
+          You haven&apos;t placed any bids yet. <Link href="/flights" className="text-teal font-semibold">Find a flight</Link>.
+        </div>
+      )}
     </div>
   );
 }

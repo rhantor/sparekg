@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth-context';
+import { StoreProvider } from '@/lib/store/StoreProvider';
+import { useGetUserQuery } from '@/lib/store/api';
+import { colorFor } from '@/lib/view-models';
 import { Avatar } from '@/components/ui/Avatar';
-import { currentUser } from '@/lib/app-samples';
 import { Plane, Home, Search, PlusCircle, Layers, User, LogOut, Coins, ShieldAlert } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -17,9 +19,20 @@ const NAV_ITEMS = [
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  // The shell is a child, not this component, so that it too can use the
+  // marketplace hooks (points balance, badge counts) under the provider.
+  return (
+    <StoreProvider>
+      <AppShell>{children}</AppShell>
+    </StoreProvider>
+  );
+}
+
+function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, kycApproved, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const { data: profile } = useGetUserQuery(user?.uid ?? '', { skip: !user?.uid });
 
   useEffect(() => {
     if (!loading && !isAuthenticated) router.replace('/login');
@@ -69,10 +82,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2">
             <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal/[0.08] text-teal-700 text-sm font-semibold">
-              <Coins className="w-4 h-4" /> {currentUser.points}
+              <Coins className="w-4 h-4" /> {profile?.pointsBalance ?? 0}
             </span>
             <Link href="/profile">
-              <Avatar name={user.displayName || currentUser.name} color={currentUser.color} size={34} />
+              <Avatar
+                name={profile?.displayName || user.displayName}
+                color={colorFor(user.uid)}
+                size={34}
+              />
             </Link>
             <button onClick={logout} aria-label="Sign out" className="w-9 h-9 rounded-lg flex items-center justify-center text-ash hover:text-rose-600 hover:bg-rose-500/[0.06] transition-colors">
               <LogOut className="w-4 h-4" />

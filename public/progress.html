@@ -33,46 +33,67 @@
         </header>
 
         <div class="max-w-3xl mx-auto mb-8 p-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-slate-400 leading-relaxed">
-            <strong class="text-slate-200">Where things stand:</strong> The consumer landing, the authenticated app shell
-            (home, flights, bids, profile), and the admin shell are built as polished UI on <em>mock data</em>. The blueprint's
-            engine &mdash; the RTK Query data layer, Cloud Functions, the two state machines, the points ledger, in-app chat,
-            and real Firestore reads &mdash; is the remaining work. Phases 0&ndash;1 are largely done; everything past that is
-            UI-scaffolded or not started.
+            <strong class="text-slate-200">Where things stand:</strong> The marketplace is real and deployed. Posting a flight,
+            browsing, bidding, and accepting or declining run against live Firestore through the RTK Query data layer, with every
+            status change enforced server-side by 9 Cloud Functions now live in production. 41 automated checks pass against the
+            deployed backend, including deliberate privilege-escalation and IDOR attempts. Phases 0&ndash;2 are done. What
+            remains is the points ledger (Phase 3), settlement and ratings (Phase 4),
+            in-app chat, and the admin consoles beyond KYC and Team Access &mdash; those screens are still mock UI.
         </div>
 
         <div class="max-w-3xl mx-auto mb-10 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-700 bg-slate-800/50">
                 <h2 class="text-lg font-semibold text-white">📣 Update for the team</h2>
-                <p class="text-xs text-slate-500 mt-0.5">Shareable summary &mdash; ~30% through the blueprint.</p>
+                <p class="text-xs text-slate-500 mt-0.5">Shareable summary &mdash; 41% of checklist items complete, with Phases 0&ndash;2 of 6 done.</p>
             </div>
             <div class="p-6 space-y-5 text-sm text-slate-300 leading-relaxed">
-                <p><span class="font-semibold text-slate-100">Where we are:</span> The foundation and trust layer are functionally done, the full consumer + admin interface is built, and the Firebase backend is live. The remaining work is wiring the marketplace logic to real data.</p>
+                <p><span class="font-semibold text-slate-100">Where we are:</span> The core marketplace works end to end. A verified traveler can post a flight, a verified sender can find it and bid, and the traveler can accept or decline &mdash; all against the live database, with the money-and-status logic locked to the server.</p>
 
                 <div>
                     <p class="font-semibold text-emerald-400 mb-2">✅ Done &amp; working</p>
                     <ul class="list-disc list-inside space-y-1 text-slate-400">
                         <li><span class="text-slate-300">Accounts &amp; sign-in</span> &mdash; sign-up, login, Google sign-in, password reset, create/edit profile (photo, phone, payout, home airport).</li>
                         <li><span class="text-slate-300">KYC / identity verification</span> &mdash; full submission with in-app live selfie, ID-number encryption, and an admin approve/reject moderation queue that grants a verified badge.</li>
+                        <li><span class="text-slate-300">The marketplace loop</span> &mdash; post a flight, browse and search, place a bid, accept/decline. Live data throughout; capacity is decremented atomically so a flight can never be oversold.</li>
                         <li><span class="text-slate-300">Design</span> &mdash; polished premium travel-brand look (deep navy + teal), smooth animations, consistent icons. Public landing page complete.</li>
-                        <li><span class="text-slate-300">Backend infrastructure</span> &mdash; Firebase Auth, Firestore (security rules + indexes), and Storage deployed and live on the <code class="text-slate-300">sparekg</code> project.</li>
+                        <li><span class="text-slate-300">Team access</span> &mdash; teammates can be given admin accounts from inside the console, at two permission levels, without sharing anyone's login.</li>
+                        <li><span class="text-slate-300">Backend infrastructure</span> &mdash; Firebase Auth, Firestore (rules + 16 indexes), Storage, and 9 Cloud Functions all deployed live on the <code class="text-slate-300">sparekg</code> project.</li>
                     </ul>
                 </div>
 
                 <div>
-                    <p class="font-semibold text-amber-400 mb-2">🟡 Built as UI, not yet connected to the database (next milestone)</p>
+                    <p class="font-semibold text-emerald-400 mb-2">🧪 Tested</p>
                     <ul class="list-disc list-inside space-y-1 text-slate-400">
-                        <li>Post a flight (traveler), browse/search flights (sender), place a bid, manage incoming bids. Screens are fully designed and clickable on sample data &mdash; next is making them save &amp; load real data.</li>
+                        <li>41 automated checks run against the live system and pass &mdash; including deliberate attacks: bidding on your own flight, over-booking a flight, accepting someone else's bid, and trying to grant yourself admin rights. All correctly blocked.</li>
+                        <li>Booking capacity is transaction-safe, so a flight cannot be double-booked if two people accept at the same moment.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-emerald-400 mb-2">🔒 Security work in this pass</p>
+                    <ul class="list-disc list-inside space-y-1 text-slate-400">
+                        <li>Closed a privilege-escalation path: the admin-granting function accepted <em>any</em> caller, and the admin console only checked that you were signed in, not that you were staff.</li>
+                        <li>Fixed the Cloud Functions, which had never compiled &mdash; meaning KYC approval was not actually granting verified status server-side.</li>
+                        <li>Rewrote the database rules to an allowlist: clients can no longer write status, price, capacity or balances on any record.</li>
                     </ul>
                 </div>
 
                 <div>
                     <p class="font-semibold text-slate-400 mb-2">⬜ Not started yet (later phases)</p>
                     <ul class="list-disc list-inside space-y-1 text-slate-500">
-                        <li>Points/credits economy, transactions &amp; settlement (handoff, delivery, payouts, ratings), notifications, and the remaining admin dashboards (analytics, disputes, user management).</li>
+                        <li>Points/credits economy, transactions &amp; settlement (handoff, delivery, payouts, ratings), in-app chat, notifications, and the remaining admin dashboards (analytics, disputes, user management).</li>
                     </ul>
                 </div>
 
-                <p class="pt-1"><span class="font-semibold text-slate-100">Next up:</span> make the marketplace real &mdash; connect flight posting, discovery, and bidding to the live database so a verified user can post a flight and have it appear for senders to bid on.</p>
+                <div>
+                    <p class="font-semibold text-amber-400 mb-2">⚠️ Known items</p>
+                    <ul class="list-disc list-inside space-y-1 text-slate-400">
+                        <li>The production site still needs the server credential added in Vercel before it is fully active.</li>
+                        <li>Node 20 runtime is deprecated by Google on 2026-10-30 &mdash; the functions need a runtime upgrade before then.</li>
+                    </ul>
+                </div>
+
+                <p class="pt-1"><span class="font-semibold text-slate-100">Next up:</span> Phase 3 &mdash; the points economy: an append-only ledger, sign-up and monthly credits, and holding/capturing/refunding points as bids are placed and resolved.</p>
             </div>
         </div>
 
@@ -86,15 +107,15 @@
                 title: "Phase 0 — Foundation (Weeks 1-2)",
                 tasks: [
                     { id: "p0-1", text: "Repo, Firebase project, environment management.", done: true, note: "CI/CD pipeline pending (see Architecture)." },
-                    { id: "p0-2", text: "Sign in — email/password + server session cookie.", done: true, note: "Session cookie needs FIREBASE_SERVICE_ACCOUNT_KEY to verify server-side." },
-                    { id: "p0-3", text: "Sign up / registration page.", done: true, note: "Email/password + Google; redirects to /home." },
-                    { id: "p0-4", text: "Google Sign-In.", done: true, note: "On login + signup; requires Google provider enabled in Firebase console." },
-                    { id: "p0-5", text: "Password reset.", done: true },
-                    { id: "p0-6", text: "Create user profile on sign-up.", done: true, note: "onUserCreate seeds the doc; /profile/edit upserts via client SDK." },
-                    { id: "p0-7", text: "Complete / edit profile (photo, payout, languages, home airport).", done: true, note: "/profile/edit writes to Firestore + uploads avatar (storage.rules updated — redeploy needed)." },
-                    { id: "p0-8", text: "Phone number capture (required pre-bid).", done: true, note: "Captured in /profile/edit; pre-bid enforcement comes with Phase 2 wiring." },
-                    { id: "p0-9", text: "Firestore + Storage security-rules skeleton.", done: true, note: "Rules present; automated tests pending (see Architecture)." },
-                    { id: "p0-10", text: "Admin role-grant function and admin shell.", done: true }
+                    { id: "p0-2", text: "Sign in — email/password + server session cookie.", done: true, note: "Email/password provider enabled and verified. Service-account key is set locally; still needed in Vercel for the server session cookie." },
+                    { id: "p0-3", text: "Sign up / registration page.", done: true, note: "Verified end to end — signup creates the account and onUserCreate seeds the profile document automatically." },
+                    { id: "p0-4", text: "Google Sign-In.", done: true, note: "Working on login + signup." },
+                    { id: "p0-5", text: "Password reset.", done: true, note: "Reset email confirmed sending." },
+                    { id: "p0-6", text: "Create user profile on sign-up.", done: true, note: "onUserCreate deployed and firing (it never compiled before, so pre-existing accounts were backfilled by hand). Seeds points at 0 — a flat balance would be unbacked by any ledger entry." },
+                    { id: "p0-7", text: "Complete / edit profile (photo, payout, languages, home airport).", done: true, note: "/profile/edit writes to Firestore + uploads avatar; rules restrict it to an explicit field allowlist." },
+                    { id: "p0-8", text: "Phone number capture (required pre-bid).", done: true, note: "Enforced server-side in submitBid — a bid without a profile phone number is rejected." },
+                    { id: "p0-9", text: "Firestore + Storage security-rules skeleton.", done: true, note: "Rewritten to allowlists and deployed; clients cannot write flights/bids at all. Automated rule tests still pending (see Architecture)." },
+                    { id: "p0-10", text: "Admin role-grant function and admin shell.", done: true, note: "setUserRole callable + /admin/team page; admin shell now gates on isAdmin, not merely signed-in." }
                 ]
             },
             {
@@ -102,19 +123,19 @@
                 tasks: [
                     { id: "p1-1", text: "KYC submission with capture-only selfie.", done: true, note: "MediaStream capture enforced; liveness head-turn prompt pending." },
                     { id: "p1-2", text: "Cloud Storage rules, encryption-at-rest for ID number.", done: true, note: "Local AES-256-GCM (blueprint specifies Cloud KMS)." },
-                    { id: "p1-3", text: "KYC moderation queue.", done: true, note: "FIFO list + signed URLs + server-side admin auth; claim/release, name/DOB cross-check, escalate pending." },
-                    { id: "p1-4", text: "Custom claim plumbing on approve.", done: true },
+                    { id: "p1-3", text: "KYC moderation queue.", done: true, note: "FIFO list + signed URLs + server-side admin auth. Was inert until the service-account key was set; claim/release, name/DOB cross-check, escalate still pending." },
+                    { id: "p1-4", text: "Custom claim plumbing on approve.", done: true, note: "Was silently broken — onKycApproved never compiled, so approval never granted the claim. Fixed and deployed; end-to-end verification still needs a manual UI pass." },
                     { id: "p1-5", text: "KYC re-submission flow (1-hr cooldown, 3-strike auto-flag).", done: false }
                 ]
             },
             {
                 title: "Phase 2 — Core Marketplace (Weeks 5-7)",
                 tasks: [
-                    { id: "p2-1", text: "Post a flight (Traveler) — free for now, no points.", done: false, note: "Form built (mock); Firestore write / postFlightCallable pending." },
-                    { id: "p2-2", text: "Browse & discover flights (Sender) — filters + route-key index.", done: false, note: "Browse UI + filters built (mock); Firestore query pending." },
-                    { id: "p2-3", text: "Place a bid (Sender).", done: false, note: "Bid panel built (mock); submitBidCallable pending." },
-                    { id: "p2-4", text: "Manage incoming bids — accept / counter / decline (Traveler).", done: false, note: "Bids UI built (mock); acceptBidCallable + transitions pending." },
-                    { id: "p2-5", text: "Flight & bid state machines (server-enforced).", done: false },
+                    { id: "p2-1", text: "Post a flight (Traveler) — free for now, no points.", done: true, note: "postFlight callable; server owns status, capacity and traveler info." },
+                    { id: "p2-2", text: "Browse & discover flights (Sender) — filters + route-key index.", done: true, note: "Live Firestore query via RTK Query; composite index added for status+routeKey+departureAt." },
+                    { id: "p2-3", text: "Place a bid (Sender).", done: true, note: "submitBid callable; total is computed server-side from the flight's own price." },
+                    { id: "p2-4", text: "Manage incoming bids — accept / decline (Traveler).", done: false, note: "Accept + decline are live and transactional. Counter-offer not built — BidStatus has no COUNTERED state in the blueprint schema." },
+                    { id: "p2-5", text: "Flight & bid state machines (server-enforced).", done: true, note: "functions/src/state-machines.ts — transition tables + actor permissions; hourly job expires stale bids." },
                     { id: "p2-6", text: "Prohibited-goods policy + canonical categories (hard/soft).", done: false },
                     { id: "p2-7", text: "In-app chat — unlock post-AGREED, mask phone/email pre-AGREED.", done: false }
                 ]
@@ -166,25 +187,27 @@
                     { id: "ad-3", text: "Economy oversight — dashboard + ledger audit + reconciliation.", done: false, note: "Admin economy page is mock UI." },
                     { id: "ad-4", text: "Platform analytics — KPI strip, route heatmap, funnels, retention.", done: false, note: "Admin dashboard is mock UI." },
                     { id: "ad-5", text: "Content management — onboarding videos, banners, FAQ, policy versions, app_config.", done: false, note: "Admin content/settings pages are mock UI." },
-                    { id: "ad-6", text: "Audit-trail viewer (read-only).", done: false, note: "audit_log writes exist for KYC approve; console is mock UI." },
-                    { id: "ad-7", text: "Admin 2FA / MFA (mandatory at sign-in).", done: false }
+                    { id: "ad-6", text: "Audit-trail viewer (read-only).", done: false, note: "audit_log now written on KYC approve and every role grant/revoke; the viewer console is still mock UI." },
+                    { id: "ad-7", text: "Admin 2FA / MFA (mandatory at sign-in).", done: false },
+                    { id: "ad-8", text: "Team access — grant / revoke admin and super-admin roles.", done: true, note: "/admin/team + setUserRole callable. Super-admin only, cannot change own role, last super admin cannot be demoted, all changes audited. 14/14 automated checks." }
                 ]
             },
             {
                 title: "Architecture & Infrastructure (§4)",
                 tasks: [
-                    { id: "ar-1", text: "RTK Query + Firebase baseQuery data layer + slices.", done: false, note: "Mandated by blueprint; currently using React Context + mock data." },
-                    { id: "ar-2", text: "firestore.indexes.json composite indexes.", done: true, note: "All §3.5 indexes defined; deploy with firebase deploy --only firestore:indexes." },
+                    { id: "ar-1", text: "RTK Query + Firebase baseQuery data layer + slices.", done: true, note: "src/lib/store — firebaseBaseQuery (doc/collection/callable), tag invalidation across flights+bids, Timestamps serialised to ISO." },
+                    { id: "ar-2", text: "firestore.indexes.json composite indexes.", done: true, note: "16 indexes deployed and confirmed built. Every app query is probed by a script — two missing ones (home page, bid-expiry job) were caught that way." },
                     { id: "ar-3", text: "PWA / installable manifest.", done: false },
-                    { id: "ar-4", text: "CI/CD pipeline.", done: false },
-                    { id: "ar-5", text: "Automated Firestore security-rule tests.", done: false }
+                    { id: "ar-4", text: "CI/CD pipeline.", done: false, note: "Deploys are manual: firebase deploy for rules/indexes/functions, Vercel for the app." },
+                    { id: "ar-5", text: "Automated Firestore security-rule tests.", done: false, note: "No emulator rule tests yet. Partly covered from the outside: 41 automated checks hit the deployed callables, including deliberate escalation and IDOR attempts." },
+                    { id: "ar-6", text: "Cloud Functions deployed to production.", done: true, note: "9 functions live in us-central1 on Blaze. Node 20 runtime is deprecated (decommissioned 2026-10-30) and firebase-functions v5 is outdated — both need an upgrade pass." }
                 ]
             },
             {
                 title: "Public Site & Consumer UI",
                 tasks: [
                     { id: "pu-1", text: "Marketing landing (hero, how-it-works, videos, feeds, trust, beta, about).", done: true },
-                    { id: "pu-2", text: "Authenticated app shell (home, flights, bids, profile + nav).", done: true, note: "UI on mock data; real reads pending (see Phase 2 / Architecture)." },
+                    { id: "pu-2", text: "Authenticated app shell (home, flights, bids, profile + nav).", done: true, note: "Marketplace pages now read live Firestore; points/rating come from the user doc." },
                     { id: "pu-3", text: "About / FAQ pages.", done: false },
                     { id: "pu-4", text: "Terms of Service / liability-cap page.", done: false }
                 ]

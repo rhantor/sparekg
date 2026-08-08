@@ -3,23 +3,62 @@ import { use, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Star, Plane, Calendar, Package, Tag, Check, CheckCircle2, Users,
+  AlertCircle, Loader2, ShieldAlert,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusBadge } from '@/components/app/StatusBadge';
-import { browseFlights, myFlights, incomingBids } from '@/lib/app-samples';
+import { useAuth } from '@/lib/auth-context';
+import {
+  useGetFlightQuery,
+  useBidsForFlightQuery,
+  useSubmitBidMutation,
+  useAcceptBidMutation,
+  useDeclineBidMutation,
+} from '@/lib/store/api';
+import { toAppFlight, colorFor } from '@/lib/view-models';
+
+const CATEGORY_FALLBACK = 'General';
 
 export default function FlightDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const flight = [...browseFlights, ...myFlights].find((f) => f.id === id);
+  const { user, kycApproved } = useAuth();
+  const uid = user?.uid ?? '';
+
+  const { data: raw, isLoading, isError, error } = useGetFlightQuery(id);
+  const flight = raw ? toAppFlight(raw, uid) : null;
+  const isMine = !!raw && raw.travelerId === uid;
+
+  // Only the traveler may list a flight's bids — the rules enforce it, so don't
+  // even ask on behalf of a sender.
+  const { data: bidsForMine = [] } = useBidsForFlightQuery(
+    { flightId: id, travelerId: uid },
+    { skip: !isMine || !uid },
+  );
+
+  const [submitBid, { isLoading: submitting }] = useSubmitBidMutation();
+  const [acceptBid, { isLoading: accepting }] = useAcceptBidMutation();
+  const [declineBid, { isLoading: declining }] = useDeclineBidMutation();
+  const responding = accepting || declining;
 
   const [kg, setKg] = useState(2);
   const [item, setItem] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [placed, setPlaced] = useState<{ kg: number; total: number } | null>(null);
 
-  if (!flight) {
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto grid lg:grid-cols-[1.4fr_1fr] gap-6">
+        <div className="h-96 rounded-2xl border border-line bg-white/60 animate-pulse" />
+        <div className="h-72 rounded-2xl border border-line bg-white/60 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (isError || !flight || !raw) {
     return (
       <div className="text-center py-20">
-        <p className="text-ash">Flight not found.</p>
+        <AlertCircle className="w-6 h-6 text-ash mx-auto mb-3" />
+        <p className="text-ash">{error?.code === 'not-found' ? 'Flight not found.' : 'Couldn’t load this flight.'}</p>
         <Link href="/flights" className="inline-flex items-center gap-1.5 text-teal font-semibold mt-4">
           <ArrowLeft className="w-4 h-4" /> Back to flights
         </Link>
@@ -27,8 +66,36 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  const total = kg * flight.pricePerKg;
-  const bidsForMine = flight.mine ? incomingBids.filter((b) => b.flightId === flight.id) : [];
+  const total = Math.round(kg * flight.pricePerKg * 100) / 100;
+  const canBid = flight.kgLeft > 0 && raw.status === 'LIVE';
+
+  async function placeBid() {
+    setFormError(null);
+    if (!item.trim()) return setFormError('Please describe what you are sending.');
+    try {
+      await submitBid({
+        flightId: id,
+        kgRequested: kg,
+        itemCategory: raw!.acceptedCategories?.[0] ?? CATEGORY_FALLBACK,
+        itemDescription: item.trim(),
+        declaredValue: 0,
+      }).unwrap();
+      setPlaced({ kg, total });
+    } catch (err) {
+      setFormError((err as { message?: string })?.message ?? 'Could not place your bid.');
+    }
+  }
+
+  async function respond(action: 'accept' | 'decline', bidId: string) {
+    setFormError(null);
+    try {
+      const args = { bidId, flightId: id };
+      if (action === 'accept') await acceptBid(args).unwrap();
+      else await declineBid(args).unwrap();
+    } catch (err) {
+      setFormError((err as { message?: string })?.message ?? 'Could not update that bid.');
+    }
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -74,40 +141,54 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
 
           <div className="bg-white rounded-2xl border border-line shadow-soft p-6 space-y-4">
             <Row icon={Calendar} label="Travel date" value={flight.date} />
-            <Row icon={Plane} label="Airline" value={flight.airline} />
+            <Row icon={Plane} label="Airline" value={`${flight.airline} · ${raw.flightNumber}`} />
             <Row icon={Package} label="Capacity" value={`${flight.kgLeft} KG available of ${flight.kgTotal} KG`} />
             <Row icon={Tag} label="Price" value={`RM ${flight.pricePerKg} / kg`} />
-            <div>
-              <div className="flex items-center gap-2 text-sm text-ash mb-2">
-                <Check className="w-4 h-4" /> Accepted categories
+            {flight.categories.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 text-sm text-ash mb-2">
+                  <Check className="w-4 h-4" /> Accepted categories
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {flight.categories.map((c) => (
+                    <span key={c} className="px-2.5 py-1 rounded-md bg-teal/[0.07] text-teal-700 text-xs font-medium border border-teal/15">
+                      {c}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {flight.categories.map((c) => (
-                  <span key={c} className="px-2.5 py-1 rounded-md bg-teal/[0.07] text-teal-700 text-xs font-medium border border-teal/15">
-                    {c}
-                  </span>
-                ))}
-              </div>
-            </div>
+            )}
+            {raw.specialNotes && (
+              <p className="text-sm text-ash border-t border-line pt-4">{raw.specialNotes}</p>
+            )}
           </div>
         </div>
 
         {/* Right — bid panel or incoming bids */}
         <div className="lg:sticky lg:top-24 h-fit">
-          {flight.mine ? (
+          {formError && (
+            <div className="flex items-start gap-2 px-4 py-3 mb-4 rounded-lg bg-rose-500/[0.07] border border-rose-500/20 text-sm text-rose-700">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              {formError}
+            </div>
+          )}
+
+          {isMine ? (
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6">
               <h2 className="font-display text-lg font-semibold text-navy mb-1 flex items-center gap-2">
                 <Users className="w-4 h-4 text-teal" /> Incoming bids
               </h2>
-              <p className="text-sm text-ash mb-4">{bidsForMine.length} sender{bidsForMine.length === 1 ? '' : 's'} want to use your capacity.</p>
+              <p className="text-sm text-ash mb-4">
+                {bidsForMine.length} sender{bidsForMine.length === 1 ? '' : 's'} want to use your capacity.
+              </p>
               <div className="space-y-3">
                 {bidsForMine.map((b) => (
-                  <div key={b.id} className="border border-line rounded-xl p-3">
+                  <div key={b.bidId} className="border border-line rounded-xl p-3">
                     <div className="flex items-center gap-2.5 mb-2">
-                      <Avatar name={b.counterpartyName} color={b.counterpartyColor} size={32} />
+                      <Avatar name={b.sender?.displayName ?? 'Sender'} color={colorFor(b.senderId)} size={32} />
                       <div className="flex-1">
-                        <div className="text-sm font-medium text-navy">{b.counterpartyName}</div>
-                        <div className="text-xs text-ash">{b.kg} KG · {b.item}</div>
+                        <div className="text-sm font-medium text-navy">{b.sender?.displayName ?? 'Sender'}</div>
+                        <div className="text-xs text-ash">{b.kgRequested} KG · {b.itemDescription}</div>
                       </div>
                       <StatusBadge status={b.status} />
                     </div>
@@ -115,22 +196,54 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                       <span className="font-semibold text-navy">RM {b.offeredTotal}</span>
                       {b.status === 'PENDING' && (
                         <div className="flex gap-2">
-                          <button className="px-3 py-1.5 rounded-lg bg-teal text-white text-xs font-semibold hover:bg-teal-700 transition-colors">Accept</button>
-                          <button className="px-3 py-1.5 rounded-lg border border-line text-ash text-xs font-semibold hover:border-navy/25 transition-colors">Decline</button>
+                          <button
+                            onClick={() => respond('accept', b.bidId)}
+                            disabled={responding}
+                            className="px-3 py-1.5 rounded-lg bg-teal text-white text-xs font-semibold hover:bg-teal-700 transition-colors disabled:opacity-60"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => respond('decline', b.bidId)}
+                            disabled={responding}
+                            className="px-3 py-1.5 rounded-lg border border-line text-ash text-xs font-semibold hover:border-navy/25 transition-colors disabled:opacity-60"
+                          >
+                            Decline
+                          </button>
                         </div>
                       )}
                     </div>
                   </div>
                 ))}
+                {bidsForMine.length === 0 && (
+                  <p className="text-sm text-ash text-center py-4">No bids yet. Senders will appear here.</p>
+                )}
               </div>
             </div>
-          ) : submitted ? (
+          ) : placed ? (
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6 text-center">
               <div className="w-12 h-12 rounded-full bg-teal/10 flex items-center justify-center mx-auto mb-3">
                 <CheckCircle2 className="w-6 h-6 text-teal" />
               </div>
               <h2 className="font-display text-lg font-semibold text-navy mb-1">Bid submitted</h2>
-              <p className="text-sm text-ash">{flight.travelerName} will review your offer of <strong className="text-navy">RM {total}</strong> for {kg} KG.</p>
+              <p className="text-sm text-ash">
+                {flight.travelerName} will review your offer of <strong className="text-navy">RM {placed.total}</strong> for {placed.kg} KG.
+              </p>
+            </div>
+          ) : !kycApproved ? (
+            <div className="bg-white rounded-2xl border border-line shadow-soft p-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-3">
+                <ShieldAlert className="w-6 h-6 text-amber-600" />
+              </div>
+              <h2 className="font-display text-lg font-semibold text-navy mb-1">Verify to bid</h2>
+              <p className="text-sm text-ash mb-4">Travelers only accept shipments from verified senders.</p>
+              <Link href="/profile/kyc" className="inline-block px-4 py-2.5 rounded-xl bg-navy text-white text-sm font-semibold hover:bg-navy-700 transition-colors">
+                Start verification
+              </Link>
+            </div>
+          ) : !canBid ? (
+            <div className="bg-white rounded-2xl border border-line shadow-soft p-6 text-center text-ash text-sm">
+              This flight is no longer accepting bids.
             </div>
           ) : (
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6">
@@ -153,10 +266,12 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                 <span className="font-display text-xl font-semibold text-navy">RM {total}</span>
               </div>
               <button
-                onClick={() => item.trim() ? setSubmitted(true) : alert('Please describe what you are sending.')}
-                className="w-full py-3 rounded-xl bg-navy text-white font-semibold hover:bg-navy-700 transition-colors"
+                onClick={placeBid}
+                disabled={submitting}
+                className="w-full py-3 rounded-xl bg-navy text-white font-semibold hover:bg-navy-700 transition-colors disabled:opacity-60 inline-flex items-center justify-center gap-2"
               >
-                Submit bid
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Submitting…' : 'Submit bid'}
               </button>
               <p className="text-xs text-ash text-center mt-2.5">Points are only held once the traveler agrees.</p>
             </div>

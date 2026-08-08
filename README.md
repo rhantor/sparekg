@@ -79,12 +79,30 @@ The architecture relies heavily on **Firebase Cloud Functions** as the trusted c
    FIREBASE_SERVICE_ACCOUNT_KEY={"type": "service_account", ... }
    ```
 
-4. **Deploy Firestore Rules:**
+4. **Deploy Firestore rules, indexes and Cloud Functions:**
    ```bash
-   firebase deploy --only firestore:rules
+   cd functions && npm install && cd ..
+   firebase deploy --only firestore:rules,firestore:indexes,functions
    ```
+   The marketplace will not work without the functions: every write (posting a
+   flight, bidding, accepting) is a callable, and the rules deny client writes to
+   `flights` and `bids` by design.
 
-5. **Start the Development Server:**
+   Composite indexes take a few minutes to build. Until they finish, browse and
+   bid queries fail with `failed-precondition`.
+
+5. **Claim the first admin account** (one time only):
+
+   Set the bootstrap address on the functions config, then call `makeSuperAdmin`
+   once while signed in as that account:
+   ```bash
+   firebase functions:config:set  # or set BOOTSTRAP_SUPERADMIN_EMAIL in functions/.env
+   ```
+   The bootstrap path requires a **verified** email, only promotes the caller,
+   and permanently closes itself after the first success (`system/bootstrap`).
+   Afterwards, only an existing super admin can grant admin rights.
+
+6. **Start the Development Server:**
    ```bash
    npm run dev
    ```

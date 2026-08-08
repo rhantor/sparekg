@@ -5,12 +5,16 @@ const STYLES: Record<string, string> = {
   IN_TRANSIT: 'bg-ocean/10 text-ocean',
   COMPLETED: 'bg-navy/[0.06] text-navy',
   DRAFT: 'bg-ash/10 text-ash',
+  CANCELLED: 'bg-rose-500/10 text-rose-600',
   // bid
   PENDING: 'bg-amber-500/10 text-amber-600',
   AGREED: 'bg-teal/10 text-teal-700',
   HANDED_OVER: 'bg-ocean/10 text-ocean',
   DELIVERED: 'bg-leaf/10 text-leaf',
   DECLINED: 'bg-rose-500/10 text-rose-600',
+  EXPIRED: 'bg-ash/10 text-ash',
+  DISPUTED: 'bg-rose-500/10 text-rose-600',
+  RESOLVED: 'bg-navy/[0.06] text-navy',
 };
 
 export function StatusBadge({ status }: { status: string }) {

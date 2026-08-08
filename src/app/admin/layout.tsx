@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, ShieldCheck, Users, Coins, Scale,
   Flag, FileText, Settings, ClipboardList, Plane, LogOut, ChevronRight, Sun, Moon, Menu, X,
+  UsersRound,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -19,28 +20,34 @@ const NAV_ITEMS = [
   { href: '/admin/reports', label: 'Reports', icon: Flag, badgeKey: 'reports' as const },
   { href: '/admin/content', label: 'Content', icon: FileText },
   { href: '/admin/audit', label: 'Audit Log', icon: ClipboardList },
+  { href: '/admin/team', label: 'Team Access', icon: UsersRound, superOnly: true },
   { href: '/admin/settings', label: 'Settings', icon: Settings, superOnly: true },
 ];
 
 const BADGE_COUNTS: Record<string, number> = { kyc: 3, disputes: 2, reports: 2 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, isSuperAdmin, logout } = useAuth();
+  const { user, isAuthenticated, isAdmin, isSuperAdmin, loading, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Being signed in is not the same as being staff. Send non-admins to the
+  // consumer app rather than the login page — they are authenticated, just not
+  // authorised. Firestore rules are the real boundary; this only hides the shell.
   useEffect(() => {
+    if (loading) return;
     if (!isAuthenticated) router.replace('/login');
-  }, [isAuthenticated, router]);
+    else if (!isAdmin) router.replace('/home');
+  }, [loading, isAuthenticated, isAdmin, router]);
 
   // Close sidebar on route change on mobile
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [pathname]);
 
-  if (!isAuthenticated || !user) {
+  if (loading || !isAuthenticated || !isAdmin || !user) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="shimmer w-10 h-10 rounded-full" />

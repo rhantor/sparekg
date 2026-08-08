@@ -1,13 +1,33 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { Package, Plane, ArrowRight } from 'lucide-react';
+import { Package, Plane, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/app/PageHeader';
 import { StatusBadge } from '@/components/app/StatusBadge';
 import { Avatar } from '@/components/ui/Avatar';
-import { myBids, incomingBids, type AppBid } from '@/lib/app-samples';
+import { useAuth } from '@/lib/auth-context';
+import {
+  useMyBidsQuery,
+  useIncomingBidsQuery,
+  useAcceptBidMutation,
+  useDeclineBidMutation,
+} from '@/lib/store/api';
+import { toAppBid, type AppBid } from '@/lib/view-models';
+import type { Bid } from '@/lib/types';
 
-function BidRow({ bid, asTraveler }: { bid: AppBid; asTraveler: boolean }) {
+function BidRow({
+  bid,
+  asTraveler,
+  onAccept,
+  onDecline,
+  busy,
+}: {
+  bid: AppBid;
+  asTraveler: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+  busy: boolean;
+}) {
   return (
     <div className="bg-white rounded-2xl border border-line shadow-soft p-4 flex items-center gap-4">
       <Avatar name={bid.counterpartyName} color={bid.counterpartyColor} size={42} />
@@ -21,8 +41,20 @@ function BidRow({ bid, asTraveler }: { bid: AppBid; asTraveler: boolean }) {
       </div>
       {asTraveler && bid.status === 'PENDING' ? (
         <div className="hidden sm:flex gap-2">
-          <button className="px-3 py-2 rounded-lg bg-teal text-white text-xs font-semibold hover:bg-teal-700 transition-colors">Accept</button>
-          <button className="px-3 py-2 rounded-lg border border-line text-ash text-xs font-semibold hover:border-navy/25 transition-colors">Decline</button>
+          <button
+            onClick={onAccept}
+            disabled={busy}
+            className="px-3 py-2 rounded-lg bg-teal text-white text-xs font-semibold hover:bg-teal-700 transition-colors disabled:opacity-60 inline-flex items-center gap-1.5"
+          >
+            {busy && <Loader2 className="w-3 h-3 animate-spin" />} Accept
+          </button>
+          <button
+            onClick={onDecline}
+            disabled={busy}
+            className="px-3 py-2 rounded-lg border border-line text-ash text-xs font-semibold hover:border-navy/25 transition-colors disabled:opacity-60"
+          >
+            Decline
+          </button>
         </div>
       ) : (
         <Link href={`/flights/${bid.flightId}`} className="text-ash hover:text-teal transition-colors">
@@ -34,8 +66,33 @@ function BidRow({ bid, asTraveler }: { bid: AppBid; asTraveler: boolean }) {
 }
 
 export default function BidsPage() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? '';
   const [tab, setTab] = useState<'sender' | 'traveler'>('sender');
-  const list = tab === 'sender' ? myBids : incomingBids;
+  const [error, setError] = useState<string | null>(null);
+
+  // `skip` keeps RTK Query from firing a query with an empty uid, which the
+  // security rules would reject anyway.
+  const asSender = useMyBidsQuery(uid, { skip: !uid });
+  const asTraveler = useIncomingBidsQuery(uid, { skip: !uid });
+
+  const [acceptBid, { isLoading: accepting }] = useAcceptBidMutation();
+  const [declineBid, { isLoading: declining }] = useDeclineBidMutation();
+  const busy = accepting || declining;
+
+  const active = tab === 'sender' ? asSender : asTraveler;
+  const list: AppBid[] = ((active.data ?? []) as Bid[]).map((b) => toAppBid(b, tab));
+
+  async function respond(action: 'accept' | 'decline', bid: AppBid) {
+    setError(null);
+    try {
+      const args = { bidId: bid.id, flightId: bid.flightId };
+      if (action === 'accept') await acceptBid(args).unwrap();
+      else await declineBid(args).unwrap();
+    } catch (err) {
+      setError((err as { message?: string })?.message ?? 'Could not update that bid.');
+    }
+  }
 
   return (
     <div>
@@ -60,10 +117,36 @@ export default function BidsPage() {
         </button>
       </div>
 
-      {list.length > 0 ? (
+      {error && (
+        <div className="flex items-start gap-2 px-4 py-3 mb-4 rounded-lg bg-rose-500/[0.07] border border-rose-500/20 text-sm text-rose-700">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {active.isLoading ? (
+        <div className="space-y-3">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-20 rounded-2xl border border-line bg-white/60 animate-pulse" />
+          ))}
+        </div>
+      ) : active.isError ? (
+        <div className="bg-white rounded-2xl border border-line p-10 text-center">
+          <AlertCircle className="w-6 h-6 text-rose-500 mx-auto mb-3" />
+          <p className="text-navy font-medium mb-1">Couldn&apos;t load your bids</p>
+          <p className="text-sm text-ash">{active.error?.message ?? 'Please try again in a moment.'}</p>
+        </div>
+      ) : list.length > 0 ? (
         <div className="space-y-3">
           {list.map((b) => (
-            <BidRow key={b.id} bid={b} asTraveler={tab === 'traveler'} />
+            <BidRow
+              key={b.id}
+              bid={b}
+              asTraveler={tab === 'traveler'}
+              busy={busy}
+              onAccept={() => respond('accept', b)}
+              onDecline={() => respond('decline', b)}
+            />
           ))}
         </div>
       ) : (

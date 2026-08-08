@@ -381,5 +381,6 @@ export interface AdminUser {
   email: string;
   displayName: string;
   photoUrl: string | null;
-  role: AdminRole;
+  /** null for ordinary users — only staff carry an admin role. */
+  role: AdminRole | null;
 }

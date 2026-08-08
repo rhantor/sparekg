@@ -1,0 +1,146 @@
+/**
+ * View models: the shape the UI components render.
+ *
+ * Firestore documents and presentation needs diverge — a card wants "25 Apr
+ * 2025" and a city name, the database stores an ISO timestamp and an IATA code.
+ * Adapting here keeps formatting out of components and lets the existing card
+ * UI render live data unchanged.
+ */
+
+import type { Bid, Flight } from './types';
+
+export type FlightStatus = 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'DRAFT' | 'CANCELLED';
+export type BidStatus =
+  | 'PENDING' | 'AGREED' | 'HANDED_OVER' | 'DELIVERED'
+  | 'DECLINED' | 'EXPIRED' | 'DISPUTED' | 'RESOLVED';
+export type AvatarColor = 'ocean' | 'teal' | 'navy';
+
+export interface AppFlight {
+  id: string;
+  travelerName: string;
+  travelerColor: AvatarColor;
+  travelerRating: number;
+  travelerTrips: number;
+  verified: boolean;
+  origin: string;
+  originCode: string;
+  destination: string;
+  destinationCode: string;
+  date: string;
+  airline: string;
+  kgTotal: number;
+  kgLeft: number;
+  pricePerKg: number;
+  categories: string[];
+  status: FlightStatus;
+  bids: number;
+  mine?: boolean;
+}
+
+export interface AppBid {
+  id: string;
+  flightId: string;
+  counterpartyName: string;
+  counterpartyColor: AvatarColor;
+  route: string;
+  date: string;
+  kg: number;
+  item: string;
+  offeredTotal: number;
+  status: BidStatus;
+  role: 'sender' | 'traveler';
+}
+
+/** Cities served on the launch corridors. Unknown codes fall back to the code itself. */
+const AIRPORTS: Record<string, string> = {
+  KUL: 'Kuala Lumpur',
+  PEN: 'Penang',
+  JHB: 'Johor Bahru',
+  DAC: 'Dhaka',
+  CGP: 'Chittagong',
+  ZYL: 'Sylhet',
+};
+
+export function cityFor(code: string): string {
+  return AIRPORTS[code] ?? code;
+}
+
+export const AVATAR_COLORS: AvatarColor[] = ['ocean', 'teal', 'navy'];
+
+/**
+ * Stable colour per person: the same user is always the same colour, without
+ * storing a colour on the document.
+ */
+export function colorFor(seed: string): AvatarColor {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+export function toAppFlight(flight: Flight, currentUid?: string): AppFlight {
+  return {
+    id: flight.flightId,
+    travelerName: flight.traveler?.displayName ?? 'Traveler',
+    travelerColor: colorFor(flight.travelerId),
+    travelerRating: flight.traveler?.averageRating ?? 0,
+    travelerTrips: flight.traveler?.completedTripsAsTraveler ?? 0,
+    verified: flight.traveler?.kycVerified ?? false,
+    origin: cityFor(flight.originAirport),
+    originCode: flight.originAirport,
+    destination: cityFor(flight.destinationAirport),
+    destinationCode: flight.destinationAirport,
+    date: formatDate(flight.departureAt),
+    airline: flight.airline,
+    kgTotal: flight.totalKgAvailable,
+    kgLeft: flight.kgRemaining,
+    // Fixed-price listings have no per-kg rate; show the implied rate so the
+    // card's price column stays meaningful.
+    pricePerKg:
+      flight.pricePerKg ??
+      (flight.fixedTotalPrice && flight.totalKgAvailable
+        ? Math.round(flight.fixedTotalPrice / flight.totalKgAvailable)
+        : 0),
+    categories: flight.acceptedCategories ?? [],
+    status: flight.status as FlightStatus,
+    bids: flight.bidCount ?? 0,
+    mine: currentUid ? flight.travelerId === currentUid : undefined,
+  };
+}
+
+/**
+ * `role` is the viewer's side of the deal, which decides whose name to show:
+ * a sender sees the traveler, a traveler sees the sender.
+ */
+export function toAppBid(
+  bid: Bid,
+  role: 'sender' | 'traveler',
+  flight?: Flight,
+): AppBid {
+  const counterpartyName =
+    role === 'traveler'
+      ? bid.sender?.displayName ?? 'Sender'
+      : flight?.traveler?.displayName ?? 'Traveler';
+
+  return {
+    id: bid.bidId,
+    flightId: bid.flightId,
+    counterpartyName,
+    counterpartyColor: colorFor(role === 'traveler' ? bid.senderId : bid.travelerId),
+    route: flight
+      ? `${flight.originAirport} → ${flight.destinationAirport}`
+      : '—',
+    date: formatDate(flight?.departureAt ?? bid.createdAt),
+    kg: bid.kgRequested,
+    item: bid.itemDescription,
+    offeredTotal: bid.offeredTotal,
+    status: bid.status as BidStatus,
+    role,
+  };
+}

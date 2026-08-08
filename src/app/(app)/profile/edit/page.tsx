@@ -81,8 +81,8 @@ export default function EditProfilePage() {
       await setDoc(
         doc(db, 'users', user.uid),
         {
-          uid: user.uid,
-          email: user.email,
+          // uid and email are set once by onUserCreate and are not client-editable
+          // — the rules reject them, and email is identity, not profile data.
           displayName: displayName.trim(),
           phone: phone.trim() || null,
           homeAirportCode: homeAirport.trim().toUpperCase() || null,

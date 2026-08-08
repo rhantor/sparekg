@@ -1,0 +1,7 @@
+node_modules/
+
+# Compiled output — `npm run build` regenerates it, and firebase deploy builds
+# from source. Committing it invites a stale bundle being deployed.
+lib/
+
+*.local

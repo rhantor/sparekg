@@ -1,8 +1,13 @@
-// Sample data for the authenticated user app. Demo only — Section E wires Firestore.
+// Sample data for the authenticated user app.
+//
+// The marketplace pages now read live Firestore data; what remains here backs
+// the parts of the shell that Phase 3+ will replace (points balance, and the
+// admin console's mock screens). View-model types live in view-models.ts so the
+// live and sample paths cannot drift apart.
 
-export type FlightStatus = 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'DRAFT';
-export type BidStatus = 'PENDING' | 'AGREED' | 'HANDED_OVER' | 'DELIVERED' | 'DECLINED';
-export type AvatarColor = 'ocean' | 'teal' | 'navy';
+import type { AppBid, AppFlight, AvatarColor } from './view-models';
+
+export type { AppBid, AppFlight, AvatarColor, BidStatus, FlightStatus } from './view-models';
 
 export interface CurrentUser {
   name: string;
@@ -31,28 +36,6 @@ export const currentUser: CurrentUser = {
   tripsAsSender: 3,
   homeAirport: 'KUL',
 };
-
-export interface AppFlight {
-  id: string;
-  travelerName: string;
-  travelerColor: AvatarColor;
-  travelerRating: number;
-  travelerTrips: number;
-  verified: boolean;
-  origin: string;
-  originCode: string;
-  destination: string;
-  destinationCode: string;
-  date: string;
-  airline: string;
-  kgTotal: number;
-  kgLeft: number;
-  pricePerKg: number;
-  categories: string[];
-  status: FlightStatus;
-  bids: number;
-  mine?: boolean;
-}
 
 export const browseFlights: AppFlight[] = [
   {
@@ -95,20 +78,6 @@ export const myFlights: AppFlight[] = [
     categories: ['Documents'], status: 'COMPLETED', bids: 6, mine: true,
   },
 ];
-
-export interface AppBid {
-  id: string;
-  flightId: string;
-  counterpartyName: string;
-  counterpartyColor: AvatarColor;
-  route: string;
-  date: string;
-  kg: number;
-  item: string;
-  offeredTotal: number;
-  status: BidStatus;
-  role: 'sender' | 'traveler';
-}
 
 export const myBids: AppBid[] = [
   {
