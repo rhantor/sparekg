@@ -12,6 +12,9 @@ if (!admin.apps.length) {
     admin.initializeApp({
       credential,
       projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+      // Required for admin.storage().bucket() — without it the call throws
+      // "Bucket name not specified", which surfaces as missing KYC images.
+      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
     });
   } catch (error) {
     console.error('Firebase Admin initialization error:', error);

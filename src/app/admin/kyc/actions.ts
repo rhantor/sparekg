@@ -2,7 +2,7 @@
 
 import { adminDb } from '@/lib/firebaseAdmin';
 import { requireAdmin } from '@/lib/auth-server';
-import * as admin from 'firebase-admin';
+import { signStoragePath } from '@/lib/storage-admin';
 
 // Re-export the getSignedUrl for components that need to display KYC images securely
 export async function getSignedImageUrl(storagePath: string) {
@@ -11,22 +11,7 @@ export async function getSignedImageUrl(storagePath: string) {
   // KYC documents are sensitive — only admins may mint signed URLs for them.
   await requireAdmin();
 
-  try {
-    const bucket = admin.storage().bucket();
-    const file = bucket.file(storagePath);
-    
-    // Generate a URL valid for 1 hour
-    const [url] = await file.getSignedUrl({
-      version: 'v4',
-      action: 'read',
-      expires: Date.now() + 60 * 60 * 1000, 
-    });
-    
-    return url;
-  } catch (error) {
-    console.error('Failed to get signed URL for:', storagePath, error);
-    return null;
-  }
+  return signStoragePath(storagePath);
 }
 
 export async function approveKycSubmission(submissionId: string) {

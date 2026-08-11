@@ -3,6 +3,7 @@ import { getServerUser } from '@/lib/auth-server';
 import { getSignedImageUrl } from './actions';
 import { decryptData } from '@/lib/encryption';
 import { KycReviewForm } from './KycReviewForm';
+import { getIdDocSpec } from '@/lib/id-documents';
 import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,12 @@ interface QueuedSubmission {
   idFrontUrl: string | null;
   idBackUrl: string | null;
   selfieUrl: string | null;
+  // Whether a file was ever stored, independent of whether we could sign a URL
+  // for it. Lets the reviewer tell "applicant skipped this" apart from "our
+  // storage lookup failed" — the two must never look the same.
+  idFrontStored: boolean;
+  idBackStored: boolean;
+  selfieStored: boolean;
 }
 
 async function loadSubmission(
@@ -45,7 +52,90 @@ async function loadSubmission(
     idFrontUrl,
     idBackUrl,
     selfieUrl,
+    idFrontStored: Boolean(data.idFrontUrl),
+    idBackStored: Boolean(data.idBackUrl),
+    selfieStored: Boolean(data.selfieUrl),
   };
+}
+
+function DocumentSlot({
+  label,
+  url,
+  stored,
+  missingNote,
+  aspect = 'aspect-video',
+}: {
+  label: string;
+  url: string | null;
+  stored: boolean;
+  missingNote: string;
+  aspect?: string;
+}) {
+  return (
+    <div>
+      <p className="text-sm text-slate-400 mb-2">{label}</p>
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={label} className={`w-full h-auto rounded border border-slate-700 object-cover ${aspect}`} />
+      ) : stored ? (
+        <div className={`w-full ${aspect} bg-slate-800 rounded flex flex-col items-center justify-center gap-1 text-center px-3 border border-red-500/40`}>
+          <p className="text-sm text-red-400 font-medium">Image failed to load</p>
+          <p className="text-xs text-slate-400">
+            The file exists but could not be fetched. Check server logs — do not reject on this basis.
+          </p>
+        </div>
+      ) : (
+        <div className={`w-full ${aspect} bg-slate-800 rounded flex items-center justify-center text-center px-3 text-sm text-amber-400/90 border border-amber-500/30`}>
+          {missingNote}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Renders only the slots the document type actually has. A passport has no
+ * reverse side, so showing an empty "ID Back" panel would look like a defective
+ * submission to the reviewer.
+ */
+function IdentityDocuments({ submission }: { submission: QueuedSubmission }) {
+  const spec = getIdDocSpec(submission.idType);
+  const singleSided = spec.backLabel === null;
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <div className="flex items-baseline justify-between mb-4">
+        <h2 className="text-lg font-medium text-white">Identity Documents</h2>
+        <span className="text-xs text-slate-500">{spec.name}</span>
+      </div>
+
+      <div className={`grid grid-cols-1 gap-4 ${singleSided ? '' : 'md:grid-cols-2'}`}>
+        <DocumentSlot
+          label={spec.frontLabel}
+          url={submission.idFrontUrl}
+          stored={submission.idFrontStored}
+          missingNote="Not uploaded — required"
+        />
+        {!singleSided && (
+          <DocumentSlot
+            label={spec.backLabel!}
+            url={submission.idBackUrl}
+            stored={submission.idBackStored}
+            missingNote="Not uploaded — required for this document type"
+          />
+        )}
+      </div>
+
+      {singleSided && (
+        <p className="text-xs text-slate-500 mt-3">A passport has no reverse side — one image is a complete submission.</p>
+      )}
+      {singleSided && submission.idBackUrl && (
+        <p className="text-xs text-amber-400 mt-2">
+          An extra image was uploaded for a passport. Review it before approving.
+        </p>
+      )}
+    </div>
+  );
 }
 
 export default async function KycModerationQueue() {
@@ -102,7 +192,7 @@ export default async function KycModerationQueue() {
                 <div>
                   <p className="text-sm text-slate-400">ID Type &amp; Country</p>
                   <p className="text-slate-100 font-medium">
-                    {submission.idType} ({submission.idCountry})
+                    {getIdDocSpec(submission.idType).name} ({submission.idCountry})
                   </p>
                 </div>
                 <div>
@@ -124,39 +214,18 @@ export default async function KycModerationQueue() {
 
             {/* Documents */}
             <div className="lg:col-span-2 space-y-6">
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-                <h2 className="text-lg font-medium text-white mb-4">Identity Documents</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-slate-400 mb-2">ID Front</p>
-                    {submission.idFrontUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={submission.idFrontUrl} alt="ID Front" className="w-full h-auto rounded border border-slate-700 object-cover aspect-video" />
-                    ) : (
-                      <div className="w-full aspect-video bg-slate-800 rounded flex items-center justify-center text-slate-500">Missing</div>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-400 mb-2">ID Back</p>
-                    {submission.idBackUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={submission.idBackUrl} alt="ID Back" className="w-full h-auto rounded border border-slate-700 object-cover aspect-video" />
-                    ) : (
-                      <div className="w-full aspect-video bg-slate-800 rounded flex items-center justify-center text-slate-500">Not Provided</div>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <IdentityDocuments submission={submission} />
 
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
                 <h2 className="text-lg font-medium text-white mb-4">Live Selfie</h2>
                 <div className="max-w-md mx-auto">
-                  {submission.selfieUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={submission.selfieUrl} alt="Live Selfie" className="w-full h-auto rounded border border-slate-700 object-cover" />
-                  ) : (
-                    <div className="w-full aspect-square bg-slate-800 rounded flex items-center justify-center text-slate-500">Missing</div>
-                  )}
+                  <DocumentSlot
+                    label="Captured selfie"
+                    url={submission.selfieUrl}
+                    stored={submission.selfieStored}
+                    missingNote="Not uploaded — required"
+                    aspect="aspect-square"
+                  />
                 </div>
               </div>
             </div>

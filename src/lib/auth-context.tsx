@@ -5,7 +5,8 @@ import {
   updateProfile, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   signOut, type User as FirebaseUser,
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
 import type { AdminRole, AdminUser } from './types';
 
 interface RegisterResult { ok: boolean; error?: string }
@@ -42,6 +43,38 @@ async function establishSession(fbUser: FirebaseUser) {
   } catch (err) {
     console.warn('Session cookie not established (server-side admin features disabled):', err);
   }
+}
+
+/**
+ * Writes the chosen name onto the Firestore profile after sign-up.
+ *
+ * The `onUserCreate` trigger seeds the document the instant the Auth account
+ * exists — which is before `updateProfile()` has run — so it stores the
+ * placeholder 'New User' and, because it uses create(), never revisits it.
+ *
+ * Waiting for the document to appear is deliberate: writing it ourselves first
+ * would make that create() fail with "already exists", leaving a profile with a
+ * name and none of the other fields.
+ */
+async function backfillDisplayName(uid: string, displayName: string) {
+  const userRef = doc(db, 'users', uid);
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try {
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        if (snap.data().displayName !== displayName) {
+          await setDoc(userRef, { displayName }, { merge: true });
+        }
+        return;
+      }
+    } catch (err) {
+      console.warn('Could not sync display name to profile:', err);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  console.warn('Profile document never appeared; display name not synced.');
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -133,7 +166,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string, displayName: string): Promise<RegisterResult> => {
       try {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
-        if (displayName) await updateProfile(cred.user, { displayName });
+        if (displayName) {
+          await updateProfile(cred.user, { displayName });
+          // onAuthStateChanged already fired with a null displayName; reflect the
+          // real name now rather than making the user reload to see it.
+          setUser((prev) => (prev ? { ...prev, displayName } : prev));
+          // Not awaited — a slow trigger must not hold up sign-up.
+          void backfillDisplayName(cred.user.uid, displayName);
+        }
         await establishSession(cred.user);
         return { ok: true };
       } catch (error) {
