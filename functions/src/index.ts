@@ -16,6 +16,14 @@ import {
   validateSubmitBid,
   validateBidId,
 } from './validation';
+import {
+  prepareEntry,
+  commitEntry,
+  postEntry,
+  getPointsEconomy,
+  entryIds,
+  currentPeriod,
+} from './points';
 
 admin.initializeApp();
 
@@ -140,6 +148,34 @@ export const onUserCreate = authTriggers.user().onCreate(async (user) => {
     logger.info('User document created', { uid: user.uid });
   } catch (error) {
     logger.error('Failed to create user document', { uid: user.uid, error });
+    return;
+  }
+
+  // The opening balance is issued as a ledger entry rather than baked into the
+  // document above, so it is backed by a row like every other point in the
+  // system. It lands in the promotional bucket: a sign-up gift is spendable but
+  // not withdrawable, and is spent ahead of anything the user paid for.
+  //
+  // Posted after the profile exists because the ledger writes the balance onto
+  // it. A failure here leaves a usable account with a zero balance, which the
+  // monthly grant will correct — far better than failing account creation.
+  try {
+    const economy = await getPointsEconomy();
+    if (economy.signupBonus > 0) {
+      await postEntry({
+        entryId: entryIds.signup(user.uid),
+        userId: user.uid,
+        delta: economy.signupBonus,
+        category: 'SIGNUP',
+        referenceType: 'NONE',
+        referenceId: null,
+        description: 'Welcome bonus',
+        createdBy: 'SYSTEM',
+        toPromo: true,
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to issue signup bonus', { uid: user.uid, error });
   }
 });
 
@@ -425,6 +461,11 @@ export const submitBid = onCall(async (request) => {
   const bidRef = db.collection('bids').doc();
   const expiresAt = new Date(Date.now() + BID_WINDOW_HOURS * 3600_000);
 
+  // Read outside the transaction: config is not part of the atomic unit, and a
+  // read of it inside would only add contention.
+  const economy = await getPointsEconomy();
+  const bidCost = economy.bidSubmitCost;
+
   await db.runTransaction(async (tx) => {
     const flightSnap = await tx.get(flightRef);
     if (!flightSnap.exists) {
@@ -473,6 +514,23 @@ export const submitBid = onCall(async (request) => {
       offeredTotal = flight.fixedTotalPrice;
     }
 
+    // Hold the bid fee before any write below — Firestore requires every read in
+    // a transaction to precede every write, and preparing the entry reads the
+    // bidder's balance. An insufficient balance throws here and the bid is never
+    // created, so a sender can never hold a slot they cannot pay for.
+    const hold = bidCost > 0
+      ? await prepareEntry(tx, {
+          entryId: entryIds.bidHold(bidRef.id),
+          userId: caller.uid,
+          delta: -bidCost,
+          category: 'BID_HOLD',
+          referenceType: 'BID',
+          referenceId: bidRef.id,
+          description: `Hold for bid on ${flight.originCode ?? 'flight'}→${flight.destinationCode ?? ''}`.trim(),
+          createdBy: 'USER',
+        })
+      : null;
+
     tx.set(bidRef, {
       bidId: bidRef.id,
       flightId: input.flightId,
@@ -494,7 +552,10 @@ export const submitBid = onCall(async (request) => {
       currency: flight.currency,
       urgencyLevel: 0,
       urgencyExpiresAt: null,
-      pointsHeld: 0, // Phase 3 holds points here.
+      pointsHeld: bidCost,
+      // Which bucket the hold came from, so a refund can put it back where it
+      // came from without re-deriving it from the ledger.
+      pointsHeldPromo: hold?.promoPortion ?? 0,
       status: 'PENDING' satisfies BidStatus,
       agreedAt: null,
       expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
@@ -506,9 +567,16 @@ export const submitBid = onCall(async (request) => {
       bidCount: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    if (hold) commitEntry(tx, hold);
   });
 
-  logger.info('Bid submitted', { bidId: bidRef.id, flightId: input.flightId, uid: caller.uid });
+  logger.info('Bid submitted', {
+    bidId: bidRef.id,
+    flightId: input.flightId,
+    uid: caller.uid,
+    pointsHeld: bidCost,
+  });
   return { bidId: bidRef.id };
 });
 
@@ -556,10 +624,32 @@ export const acceptBid = onCall(async (request) => {
 
     const kgRemaining = Math.round((flight.kgRemaining - bid.kgRequested) * 100) / 100;
 
+    // Capture: the hold taken at bid time becomes final. The points already left
+    // the balance, so this moves nothing — it is a zero-delta row recording that
+    // the hold was consumed rather than refunded. Without it the ledger would
+    // show a debit that simply never resolves, and reconciliation could not tell
+    // a captured hold from one still outstanding.
+    const held: number = typeof bid.pointsHeld === 'number' ? bid.pointsHeld : 0;
+    const capture = held > 0
+      ? await prepareEntry(tx, {
+          entryId: entryIds.bidCapture(bidId),
+          userId: bid.senderId as string,
+          delta: 0,
+          category: 'BID_CAPTURE',
+          referenceType: 'BID',
+          referenceId: bidId,
+          refundOf: entryIds.bidHold(bidId),
+          description: 'Bid accepted — hold captured',
+          createdBy: 'SYSTEM',
+        })
+      : null;
+
     tx.update(bidRef, {
       status: 'AGREED' satisfies BidStatus,
       agreedAt: FieldValue.serverTimestamp(),
     });
+
+    if (capture) commitEntry(tx, capture);
 
     tx.update(flightRef, {
       kgRemaining,
@@ -575,7 +665,40 @@ export const acceptBid = onCall(async (request) => {
   return { success: true, ...result };
 });
 
-/** Declines a bid: PENDING -> DECLINED. */
+/**
+ * Returns a bid's hold to the sender.
+ *
+ * Shared by decline and expiry because the rule is the same either way: a bid
+ * the sender never got a deal out of costs them nothing. Idempotent through the
+ * deterministic refund id, so a decline racing the expiry sweep cannot pay the
+ * hold back twice.
+ *
+ * Read-only, like every `prepare*` — the caller commits it after its own writes.
+ */
+async function prepareBidRefund(
+  tx: admin.firestore.Transaction,
+  bidId: string,
+  bid: admin.firestore.DocumentData,
+  description: string,
+) {
+  const held: number = typeof bid.pointsHeld === 'number' ? bid.pointsHeld : 0;
+  if (held <= 0) return null;
+
+  return prepareEntry(tx, {
+    entryId: entryIds.bidRefund(bidId),
+    userId: bid.senderId as string,
+    delta: held,
+    category: 'BID_REFUND',
+    referenceType: 'BID',
+    referenceId: bidId,
+    refundOf: entryIds.bidHold(bidId),
+    restorePromo: typeof bid.pointsHeldPromo === 'number' ? bid.pointsHeldPromo : 0,
+    description,
+    createdBy: 'SYSTEM',
+  });
+}
+
+/** Declines a bid: PENDING -> DECLINED. The sender's hold is returned. */
 export const declineBid = onCall(async (request) => {
   const caller = requireAuth(request);
   const bidId = validateBidId(request.data);
@@ -594,7 +717,10 @@ export const declineBid = onCall(async (request) => {
     const check = canTransitionBid(bid.status as BidStatus, 'DECLINED', actor);
     if (!check.allowed) throw new HttpsError('failed-precondition', check.reason!);
 
-    tx.update(bidRef, { status: 'DECLINED' satisfies BidStatus });
+    const refund = await prepareBidRefund(tx, bidId, bid, 'Bid declined — hold returned');
+
+    tx.update(bidRef, { status: 'DECLINED' satisfies BidStatus, pointsHeld: 0 });
+    if (refund) commitEntry(tx, refund);
   });
 
   logger.info('Bid declined', { bidId, uid: caller.uid });
@@ -616,12 +742,112 @@ export const expireStaleBids = onSchedule('every 60 minutes', async () => {
 
   if (stale.empty) return;
 
-  const batch = db.batch();
-  stale.docs.forEach((doc) => {
-    const check = canTransitionBid(doc.data().status as BidStatus, 'EXPIRED', 'SYSTEM');
-    if (check.allowed) batch.update(doc.ref, { status: 'EXPIRED' satisfies BidStatus });
-  });
-  await batch.commit();
+  // One transaction per bid rather than a single batch: returning the hold means
+  // reading the sender's balance, and a batch cannot read. Bids are independent,
+  // so a failure on one must not abandon the rest — hence the per-bid catch.
+  let expired = 0;
+  let failed = 0;
 
-  logger.info('Expired stale bids', { count: stale.size });
+  for (const doc of stale.docs) {
+    try {
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(doc.ref);
+        if (!snap.exists) return;
+        const bid = snap.data()!;
+
+        // Re-checked inside the transaction: the traveler may have answered this
+        // bid between the query above and now.
+        const check = canTransitionBid(bid.status as BidStatus, 'EXPIRED', 'SYSTEM');
+        if (!check.allowed) return;
+
+        const refund = await prepareBidRefund(tx, doc.id, bid, 'Bid expired — hold returned');
+
+        tx.update(doc.ref, { status: 'EXPIRED' satisfies BidStatus, pointsHeld: 0 });
+        if (refund) commitEntry(tx, refund);
+        expired++;
+      });
+    } catch (error) {
+      failed++;
+      logger.error('Failed to expire bid', { bidId: doc.id, error });
+    }
+  }
+
+  logger.info('Expired stale bids', { scanned: stale.size, expired, failed });
+});
+
+/**
+ * Monthly free points (blueprint §5).
+ *
+ * Runs daily rather than monthly on purpose. The grant is keyed by calendar
+ * month, so a user who joins on the 20th gets that month's credit the next day
+ * instead of waiting for the 1st, and a run that fails or is skipped is made up
+ * the following day rather than lost for the month.
+ *
+ * `monthlyFreeCap` is a ceiling on the resulting balance, not a monthly
+ * allowance: it tops a user up *to* the cap and gives nothing to anyone already
+ * above it. That stops inactive accounts accruing an unbounded pile of points
+ * that would sit on the books as a liability.
+ */
+export const grantMonthlyPoints = onSchedule('every day 02:00', async () => {
+  const economy = await getPointsEconomy();
+  if (economy.monthlyFree <= 0) return;
+
+  const period = currentPeriod();
+  let granted = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  // Paged so the job holds a bounded amount of memory as the user base grows.
+  let cursor: admin.firestore.QueryDocumentSnapshot | null = null;
+  for (;;) {
+    let q = db.collection('users').orderBy('__name__').limit(200);
+    if (cursor) q = q.startAfter(cursor);
+    const page = await q.get();
+    if (page.empty) break;
+
+    for (const doc of page.docs) {
+      const user = doc.data();
+      if (user.suspended === true) {
+        skipped++;
+        continue;
+      }
+
+      const balance =
+        (typeof user.pointsBalance === 'number' ? user.pointsBalance : 0) +
+        (typeof user.promoBalance === 'number' ? user.promoBalance : 0);
+
+      const amount = Math.min(economy.monthlyFree, economy.monthlyFreeCap - balance);
+      if (amount <= 0) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        // The period-keyed entry id is what makes the daily cadence safe: the
+        // second and every later run in the same month resolves to a row that
+        // already exists and becomes a no-op.
+        const result = await postEntry({
+          entryId: entryIds.monthly(doc.id, period),
+          userId: doc.id,
+          delta: amount,
+          category: 'MONTHLY',
+          referenceType: 'NONE',
+          referenceId: null,
+          description: `Monthly free points (${period})`,
+          createdBy: 'SYSTEM',
+          toPromo: true,
+        });
+        if (result.alreadyApplied) skipped++;
+        else granted++;
+      } catch (error) {
+        failed++;
+        logger.error('Failed to grant monthly points', { uid: doc.id, error });
+      }
+    }
+
+    if (page.size < 200) break;
+    cursor = page.docs[page.size - 1];
+  }
+
+  logger.info('Monthly points grant complete', { period, granted, skipped, failed });
 });

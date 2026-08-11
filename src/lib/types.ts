@@ -155,6 +155,9 @@ export interface Bid {
   urgencyLevel: 0 | 1 | 2 | 3;
   urgencyExpiresAt: string | null;
   pointsHeld: number;
+  /** How much of `pointsHeld` came from the promo bucket, so a refund can
+   *  return each part to the bucket it was taken from. */
+  pointsHeldPromo: number;
   status: BidStatus;
   agreedAt: string | null;
   expiresAt: string;

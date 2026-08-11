@@ -88,12 +88,12 @@
                 <div>
                     <p class="font-semibold text-amber-400 mb-2">⚠️ Known items</p>
                     <ul class="list-disc list-inside space-y-1 text-slate-400">
-                        <li>The production site still needs the server credential added in Vercel before it is fully active.</li>
+                        <li><span class="font-semibold text-slate-200">Two secrets are still missing in Vercel</span>, and the whole KYC flow is inert without them: <code>FIREBASE_SERVICE_ACCOUNT_KEY</code> (without it every KYC image renders blank) and <code>KYC_ENCRYPTION_KEY</code> (without it submission fails outright). Both are set locally. The encryption key must be copied across <em>exactly</em> and never rotated &mdash; ID numbers are stored encrypted under it.</li>
                         <li>Node 20 runtime is deprecated by Google on 2026-10-30 &mdash; the functions need a runtime upgrade before then.</li>
                     </ul>
                 </div>
 
-                <p class="pt-1"><span class="font-semibold text-slate-100">Next up:</span> Phase 3 &mdash; the points economy: an append-only ledger, sign-up and monthly credits, and holding/capturing/refunding points as bids are placed and resolved.</p>
+                <p class="pt-1"><span class="font-semibold text-slate-100">Next up:</span> the rest of Phase 3 &mdash; urgency boosts, featured listings, and points purchase via SSLCommerz / iPay88. The ledger, sign-up and monthly credits, and bid hold/capture/refund are built; they are written but <span class="font-semibold text-amber-400">not yet deployed</span>, so points do not move in production until the functions, rules and the new index ship.</p>
             </div>
         </div>
 
@@ -123,7 +123,7 @@
                 tasks: [
                     { id: "p1-1", text: "KYC submission with capture-only selfie.", done: true, note: "MediaStream capture enforced; liveness head-turn prompt pending." },
                     { id: "p1-2", text: "Cloud Storage rules, encryption-at-rest for ID number.", done: true, note: "Local AES-256-GCM (blueprint specifies Cloud KMS)." },
-                    { id: "p1-3", text: "KYC moderation queue.", done: true, note: "FIFO list + signed URLs + server-side admin auth. Was inert until the service-account key was set; claim/release, name/DOB cross-check, escalate still pending." },
+                    { id: "p1-3", text: "KYC moderation queue.", done: true, note: "FIFO list + short-lived V4 signed URLs + server-side admin auth, security-reviewed clean. Renders only the slots a document type actually has, and tells 'applicant skipped this' apart from 'our storage lookup failed' so a fetch error cannot cause a wrongful rejection. Inert in production until ar-7. Claim/release, name/DOB cross-check and escalate still pending." },
                     { id: "p1-4", text: "Custom claim plumbing on approve.", done: true, note: "Was silently broken — onKycApproved never compiled, so approval never granted the claim. Fixed and deployed; end-to-end verification still needs a manual UI pass." },
                     { id: "p1-5", text: "KYC re-submission flow (1-hr cooldown, 3-strike auto-flag).", done: false }
                 ]
@@ -143,9 +143,9 @@
             {
                 title: "Phase 3 — Points Economy (Weeks 8-9)",
                 tasks: [
-                    { id: "p3-1", text: "Points ledger and balance logic (append-only).", done: false },
-                    { id: "p3-2", text: "Sign-up bonus, monthly free (capped), transaction rewards.", done: false, note: "onUserCreate seeds a flat balance; no ledger / monthly logic yet." },
-                    { id: "p3-3", text: "Bid hold / capture / refund flows.", done: false },
+                    { id: "p3-1", text: "Points ledger and balance logic (append-only).", done: true, note: "functions/src/points.ts. Balances on the user doc are a cache of the ledger — sum(delta) must equal the balance for every user. Written as absolute values, never increment, so balanceAfter can be recorded for reconciliation. Every entry carries a deterministic id, so a retry lands on the existing row instead of moving points twice. Rules make it append-only: read your own, no client writes, no edits or deletes ever. 27 automated checks on the arithmetic." },
+                    { id: "p3-2", text: "Sign-up bonus, monthly free (capped), transaction rewards.", done: false, note: "Sign-up bonus and monthly free credit are live — both land in the promo bucket (spendable, not withdrawable, spent first). The monthly job runs daily and is keyed by calendar month, so a new user gets that month's credit the next day and a failed run is made up rather than lost; the cap tops users up TO a ceiling instead of granting unconditionally. Referral and trip rewards still pending — trip rewards need Phase 4 transactions to exist first." },
+                    { id: "p3-3", text: "Bid hold / capture / refund flows.", done: true, note: "Hold on submitBid (prepared before any write, so an insufficient balance throws and the bid is never created), zero-delta capture on accept, refund on decline and on expiry. Refunds return each part to the bucket it came from, so promo points cannot be laundered into withdrawable ones by bidding and cancelling. The expiry sweep is now one transaction per bid — a batch cannot read balances." },
                     { id: "p3-4", text: "Urgency boosts (levels 1-3, time-bound).", done: false },
                     { id: "p3-5", text: "Featured flight listing.", done: false },
                     { id: "p3-6", text: "Points purchase via SSLCommerz / iPay88 (+ bulk tiers).", done: false }
@@ -200,7 +200,8 @@
                     { id: "ar-3", text: "PWA / installable manifest.", done: false },
                     { id: "ar-4", text: "CI/CD pipeline.", done: false, note: "Deploys are manual: firebase deploy for rules/indexes/functions, Vercel for the app." },
                     { id: "ar-5", text: "Automated Firestore security-rule tests.", done: false, note: "No emulator rule tests yet. Partly covered from the outside: 41 automated checks hit the deployed callables, including deliberate escalation and IDOR attempts." },
-                    { id: "ar-6", text: "Cloud Functions deployed to production.", done: true, note: "9 functions live in us-central1 on Blaze. Node 20 runtime is deprecated (decommissioned 2026-10-30) and firebase-functions v5 is outdated — both need an upgrade pass." }
+                    { id: "ar-6", text: "Cloud Functions deployed to production.", done: true, note: "9 functions live in us-central1 on Blaze. Node 20 runtime is deprecated (decommissioned 2026-10-30) and firebase-functions v5 is outdated — both need an upgrade pass." },
+                    { id: "ar-7", text: "Production deploy secrets set in Vercel.", done: false, note: "BLOCKS KYC IN PRODUCTION. Needs FIREBASE_SERVICE_ACCOUNT_KEY (signed URLs for KYC images) and KYC_ENCRYPTION_KEY (64-char hex; encryptData throws when absent, so submission fails). Both present in .env.local, neither in Vercel; repo has no .vercel link yet. Copy the encryption key verbatim — a different value makes every stored ID number permanently unreadable." }
                 ]
             },
             {

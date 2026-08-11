@@ -103,6 +103,30 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // The points ledger is append-only and written only by Cloud Functions.
+    // Clients read their own history to render a statement; they may not write
+    // it at all, and nothing may ever edit or delete a row — an ledger that can
+    // be rewritten after the fact cannot be reconciled against balances.
+    //
+    // The `list` constraint matters as much as `get`: rules are not filters for
+    // list queries, so a statement query must pin userId to the caller or
+    // Firestore rejects it outright.
+    match /points_ledger/{entryId} {
+      allow get: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isAdmin()
+        || (isSignedIn() && request.query.limit <= 100
+            && resource.data.userId == request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
+    // Economy configuration: readable so the UI can show what a bid costs before
+    // the user commits to one. Written from the console by a super admin only.
+    match /app_config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     // kyc_submissions is intentionally absent: it is written and read solely by
     // server actions using the Admin SDK, so it falls through to the deny-all
     // below. Identity documents should never be client-readable.

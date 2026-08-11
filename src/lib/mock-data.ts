@@ -124,7 +124,7 @@ export const mockBids: Bid[] = [
     kgRequested: 5, itemCategory: 'Electronics', itemDescription: 'Samsung Galaxy S24 x2 in original packaging',
     declaredValue: 4000, specialHandling: 'Fragile - original box', offeredPricePerKg: 30,
     offeredTotal: 150, urgencyLevel: 1, urgencyExpiresAt: '2026-05-17T12:00:00Z',
-    pointsHeld: 5, status: 'PENDING', agreedAt: null,
+    pointsHeld: 5, pointsHeldPromo: 0, status: 'PENDING', agreedAt: null,
     expiresAt: '2026-05-19T08:00:00Z', transactionId: null, createdAt: '2026-05-15T10:00:00Z',
   },
   {
@@ -133,7 +133,7 @@ export const mockBids: Bid[] = [
     kgRequested: 2, itemCategory: 'Documents', itemDescription: 'Legal documents and certificates',
     declaredValue: 100, specialHandling: null, offeredPricePerKg: 40,
     offeredTotal: 80, urgencyLevel: 0, urgencyExpiresAt: null,
-    pointsHeld: 5, status: 'AGREED', agreedAt: '2026-05-15T16:00:00Z',
+    pointsHeld: 5, pointsHeldPromo: 0, status: 'AGREED', agreedAt: '2026-05-15T16:00:00Z',
     expiresAt: '2026-05-19T08:00:00Z', transactionId: 'tx1', createdAt: '2026-05-15T11:00:00Z',
   },
 ];
