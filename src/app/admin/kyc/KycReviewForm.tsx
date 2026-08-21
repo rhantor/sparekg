@@ -10,36 +10,51 @@ export function KycReviewForm({ submissionId }: { submissionId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<RejectionReason>('DOC_BLURRY');
 
   const handleApprove = async () => {
     setLoading(true);
+    setError(null);
 
     const res = await approveKycSubmission(submissionId);
     if (res.success) {
       router.refresh();
     } else {
-      alert("Error approving submission");
+      // The server distinguishes "already reviewed" from "session expired" from
+      // an unexpected failure. Showing one flat string threw all of that away.
+      setError(res.error ?? 'Failed to approve the submission.');
     }
     setLoading(false);
   };
 
   const handleReject = async () => {
     setLoading(true);
+    setError(null);
 
     const res = await rejectKycSubmission(submissionId, rejectionReason);
     if (res.success) {
       router.refresh();
       setIsRejecting(false);
     } else {
-      alert("Error rejecting submission");
+      setError(res.error ?? 'Failed to reject the submission.');
     }
     setLoading(false);
   };
 
+  const errorBanner = error ? (
+    <p
+      role="alert"
+      className="rounded border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-300"
+    >
+      {error}
+    </p>
+  ) : null;
+
   if (isRejecting) {
     return (
       <div className="space-y-4">
+        {errorBanner}
         <label className="block text-sm text-slate-300 font-medium">Rejection Reason</label>
         <select 
           className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white"
@@ -78,6 +93,7 @@ export function KycReviewForm({ submissionId }: { submissionId: string }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {errorBanner}
       <button
         onClick={handleApprove}
         disabled={loading}

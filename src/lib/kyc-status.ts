@@ -1,4 +1,4 @@
-import type { KycStatus } from './types';
+import type { KycStatus, RejectionReason } from './types';
 
 export interface KycStatusPresentation {
   /** Short label for badges and list rows. */
@@ -49,8 +49,15 @@ export function presentKycStatus(status: KycStatus | null): KycStatusPresentatio
   return status ? BY_STATUS[status] ?? NOT_SUBMITTED : NOT_SUBMITTED;
 }
 
-/** Reviewer-selected reasons, phrased for the applicant. */
-export const REJECTION_REASON_TEXT: Record<string, string> = {
+/**
+ * Reviewer-selected reasons, phrased for the applicant.
+ *
+ * Keyed by the `RejectionReason` union rather than by `string`, so adding a
+ * reason without applicant-facing wording is a compile error instead of an
+ * `undefined` message on someone's verification screen. It doubles as the
+ * server-side allowlist — see `isRejectionReason`.
+ */
+export const REJECTION_REASON_TEXT: Record<RejectionReason, string> = {
   DOC_BLURRY: 'The document image was too blurry or unreadable.',
   NAME_MISMATCH: 'The name on the document did not match your account.',
   EXPIRED_ID: 'The document has expired.',
@@ -60,3 +67,14 @@ export const REJECTION_REASON_TEXT: Record<string, string> = {
   UNDERAGE: 'The date of birth on the document does not meet the minimum age.',
   OTHER: 'Your submission could not be accepted.',
 };
+
+/**
+ * Narrows an untrusted value to a `RejectionReason`.
+ *
+ * A server action is a public HTTP endpoint — the `<select>` in the review form
+ * constrains nothing. Without this, an arbitrary string lands in a field the
+ * schema declares as this union and is echoed back to the applicant.
+ */
+export function isRejectionReason(value: unknown): value is RejectionReason {
+  return typeof value === 'string' && value in REJECTION_REASON_TEXT;
+}

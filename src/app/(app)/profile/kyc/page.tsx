@@ -251,9 +251,7 @@ export default function KycSubmissionPage() {
             <XCircle className="w-4 h-4" /> Your previous submission was rejected
           </p>
           <p className="text-rose-700/90 text-sm mt-1">
-            {kyc.userRejectionMessage ||
-              REJECTION_REASON_TEXT[kyc.rejectionReason ?? 'OTHER'] ||
-              REJECTION_REASON_TEXT.OTHER}
+            {kyc.userRejectionMessage || REJECTION_REASON_TEXT[kyc.rejectionReason ?? 'OTHER']}
           </p>
           <p className="text-ash text-xs mt-2">Please correct the issue and submit again below.</p>
         </div>

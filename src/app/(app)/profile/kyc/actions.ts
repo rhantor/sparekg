@@ -5,7 +5,8 @@ import { getServerUser } from '@/lib/auth-server';
 import { signStoragePath, isOwnKycPath } from '@/lib/storage-admin';
 import { encryptData } from '@/lib/encryption';
 import { getIdDocSpec } from '@/lib/id-documents';
-import type { IdType, KycStatus } from '@/lib/types';
+import { isRejectionReason } from '@/lib/kyc-status';
+import type { IdType, KycStatus, RejectionReason } from '@/lib/types';
 import { randomUUID } from 'crypto';
 
 interface KycSubmissionData {
@@ -115,7 +116,12 @@ export interface MyKycStatus {
   submittedAt: string | null;
   reviewedAt: string | null;
   idTypeName: string | null;
-  rejectionReason: string | null;
+  /**
+   * Narrowed, not passed through: submissions decided before the reason was
+   * validated server-side can hold an arbitrary string, and that must not be
+   * used to index the applicant-facing wording.
+   */
+  rejectionReason: RejectionReason | null;
   userRejectionMessage: string | null;
   documents: KycDocumentView[];
 }
@@ -178,7 +184,7 @@ export async function getMyKycStatus(): Promise<MyKycStatus | null> {
       submittedAt: sub.submittedAt ?? null,
       reviewedAt: sub.reviewedAt ?? null,
       idTypeName: spec.name,
-      rejectionReason: sub.rejectionReason ?? null,
+      rejectionReason: isRejectionReason(sub.rejectionReason) ? sub.rejectionReason : null,
       userRejectionMessage: sub.userRejectionMessage ?? null,
       documents,
     };
