@@ -78,11 +78,6 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    match /points_ledger/{entryId} {
-      allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow write: if false;
-    }
-
     match /transactions/{txId} {
       allow read: if isOwner(resource.data.travelerId)
         || isOwner(resource.data.senderId)

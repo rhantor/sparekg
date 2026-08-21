@@ -526,7 +526,9 @@ export const submitBid = onCall(async (request) => {
           category: 'BID_HOLD',
           referenceType: 'BID',
           referenceId: bidRef.id,
-          description: `Hold for bid on ${flight.originCode ?? 'flight'}→${flight.destinationCode ?? ''}`.trim(),
+          // postFlight writes originAirport/destinationAirport, both validated as
+          // IATA codes, so they are always present on a flight document.
+          description: `Hold for bid on ${flight.originAirport}→${flight.destinationAirport}`,
           createdBy: 'USER',
         })
       : null;
