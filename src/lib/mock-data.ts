@@ -14,7 +14,8 @@ export const mockUsers: User[] = [
     completedTripsAsTraveler: 12, completedTripsAsSender: 3,
     averageRating: 4.8, ratingCount: 15, preferredLanguage: 'EN',
     homeAirportCode: 'KUL', createdAt: '2026-03-01T10:00:00Z',
-    lastActiveAt: '2026-05-16T02:00:00Z', suspended: false, suspensionReason: null,
+    lastActiveAt: '2026-05-16T02:00:00Z',
+    lastActivityAt: '2026-05-16T02:00:00Z', suspended: false, suspensionReason: null,
   },
   {
     uid: 'u2', email: 'fatima.begum@yahoo.com', phone: '+60198765432',
@@ -24,7 +25,8 @@ export const mockUsers: User[] = [
     completedTripsAsTraveler: 0, completedTripsAsSender: 8,
     averageRating: 4.5, ratingCount: 8, preferredLanguage: 'BN',
     homeAirportCode: 'KUL', createdAt: '2026-03-15T08:00:00Z',
-    lastActiveAt: '2026-05-15T18:00:00Z', suspended: false, suspensionReason: null,
+    lastActiveAt: '2026-05-15T18:00:00Z',
+    lastActivityAt: '2026-05-15T18:00:00Z', suspended: false, suspensionReason: null,
   },
   {
     uid: 'u3', email: 'arif.hossain@hotmail.com', phone: '+60177654321',
@@ -34,7 +36,8 @@ export const mockUsers: User[] = [
     completedTripsAsTraveler: 0, completedTripsAsSender: 0,
     averageRating: 0, ratingCount: 0, preferredLanguage: 'BN',
     homeAirportCode: null, createdAt: '2026-05-14T12:00:00Z',
-    lastActiveAt: '2026-05-14T12:00:00Z', suspended: false, suspensionReason: null,
+    lastActiveAt: '2026-05-14T12:00:00Z',
+    lastActivityAt: '2026-05-14T12:00:00Z', suspended: false, suspensionReason: null,
   },
   {
     uid: 'u4', email: 'nadia.sultana@gmail.com', phone: '+60145556677',
@@ -44,7 +47,8 @@ export const mockUsers: User[] = [
     completedTripsAsTraveler: 0, completedTripsAsSender: 0,
     averageRating: 0, ratingCount: 0, preferredLanguage: 'EN',
     homeAirportCode: 'KUL', createdAt: '2026-05-10T09:00:00Z',
-    lastActiveAt: '2026-05-12T14:00:00Z', suspended: false, suspensionReason: null,
+    lastActiveAt: '2026-05-12T14:00:00Z',
+    lastActivityAt: '2026-05-12T14:00:00Z', suspended: false, suspensionReason: null,
   },
   {
     uid: 'u5', email: 'kamal.uddin@gmail.com', phone: '+60166778899',
@@ -54,7 +58,8 @@ export const mockUsers: User[] = [
     completedTripsAsTraveler: 6, completedTripsAsSender: 5,
     averageRating: 4.2, ratingCount: 11, preferredLanguage: 'EN',
     homeAirportCode: 'KUL', createdAt: '2026-04-01T07:00:00Z',
-    lastActiveAt: '2026-05-16T01:00:00Z', suspended: true,
+    lastActiveAt: '2026-05-16T01:00:00Z',
+    lastActivityAt: '2026-05-16T01:00:00Z', suspended: true,
     suspensionReason: 'Multiple dispute losses within 90 days',
   },
 ];

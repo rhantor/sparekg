@@ -3,10 +3,11 @@ import { use, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Star, Plane, Calendar, Package, Tag, Check, CheckCircle2, Users,
-  AlertCircle, Loader2, ShieldAlert,
+  AlertCircle, Loader2, ShieldAlert, Sparkles,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusBadge } from '@/components/app/StatusBadge';
+import { FeatureFlightDialog } from '@/components/app/FeatureFlightDialog';
 import { useAuth } from '@/lib/auth-context';
 import {
   useGetFlightQuery,
@@ -14,8 +15,11 @@ import {
   useSubmitBidMutation,
   useAcceptBidMutation,
   useDeclineBidMutation,
+  useGetUserQuery,
+  useAppConfigQuery,
 } from '@/lib/store/api';
 import { toAppFlight, colorFor } from '@/lib/view-models';
+import { isFeaturedNow, featureFlagsFrom } from '@/lib/economy';
 
 const CATEGORY_FALLBACK = 'General';
 
@@ -39,6 +43,16 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
   const [acceptBid, { isLoading: accepting }] = useAcceptBidMutation();
   const [declineBid, { isLoading: declining }] = useDeclineBidMutation();
   const responding = accepting || declining;
+
+  const { data: profile } = useGetUserQuery(uid, { skip: !uid });
+  const balance = (profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0);
+  const [featuring, setFeaturing] = useState(false);
+
+  // Featured listings ship dark. The callable rejects the purchase while the
+  // flag is off, so the card is hidden rather than left to fail on click.
+  const { data: appConfig } = useAppConfigQuery();
+  const featuredEnabled = Boolean(featureFlagsFrom(appConfig).enableFeaturedListings);
+  const featuredNow = isFeaturedNow(raw?.isFeatured, raw?.featuredUntil);
 
   const [kg, setKg] = useState(2);
   const [item, setItem] = useState('');
@@ -67,7 +81,10 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
   }
 
   const total = Math.round(kg * flight.pricePerKg * 100) / 100;
-  const canBid = flight.kgLeft > 0 && raw.status === 'LIVE';
+  // flight.status, not raw.status: the view model rewrites a departed listing to
+  // EXPIRED, which the hourly expireFlights sweep has not necessarily done yet.
+  const canBid = flight.kgLeft > 0 && flight.status === 'LIVE';
+  const departed = flight.status === 'EXPIRED';
 
   async function placeBid() {
     setFormError(null);
@@ -174,6 +191,40 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
           )}
 
           {isMine ? (
+            <>
+            {/* Only a live listing can be featured, which is what the callable
+                enforces — so don't offer it once the flight has moved on. */}
+            {featuredEnabled && flight.status === 'LIVE' && (
+              <div className="bg-white rounded-2xl border border-line shadow-soft p-5 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-navy text-sm">
+                      {featuredNow ? 'Featured listing' : 'Feature this listing'}
+                    </div>
+                    <div className="text-xs text-ash truncate">
+                      {featuredNow && raw?.featuredUntil
+                        ? `Top of browse until ${new Date(raw.featuredUntil).toLocaleString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}.`
+                        : 'Sit above the other listings in browse results.'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setFeaturing(true)}
+                    className="px-3 py-2 rounded-lg border border-amber-500/25 text-amber-600 text-xs font-semibold hover:bg-amber-500/[0.06] transition-colors shrink-0"
+                  >
+                    {featuredNow ? 'Extend' : 'Feature'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6">
               <h2 className="font-display text-lg font-semibold text-navy mb-1 flex items-center gap-2">
                 <Users className="w-4 h-4 text-teal" /> Incoming bids
@@ -220,6 +271,7 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                 )}
               </div>
             </div>
+            </>
           ) : placed ? (
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6 text-center">
               <div className="w-12 h-12 rounded-full bg-teal/10 flex items-center justify-center mx-auto mb-3">
@@ -229,6 +281,10 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
               <p className="text-sm text-ash">
                 {flight.travelerName} will review your offer of <strong className="text-navy">RM {placed.total}</strong> for {placed.kg} KG.
               </p>
+            </div>
+          ) : departed ? (
+            <div className="bg-white rounded-2xl border border-line shadow-soft p-6 text-center text-ash text-sm">
+              This flight has already departed.
             </div>
           ) : !kycApproved ? (
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6 text-center">
@@ -278,6 +334,18 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
           )}
         </div>
       </div>
+
+      {featuring && featuredEnabled && raw && (
+        <FeatureFlightDialog
+          open
+          onClose={() => setFeaturing(false)}
+          flightId={id}
+          uid={uid}
+          departureAt={raw.departureAt}
+          featuredUntil={raw.featuredUntil ?? null}
+          balance={balance}
+        />
+      )}
     </div>
   );
 }

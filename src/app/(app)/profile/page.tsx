@@ -7,15 +7,25 @@ import {
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Avatar } from '@/components/ui/Avatar';
-import { currentUser } from '@/lib/app-samples';
+import { useGetUserQuery } from '@/lib/store/api';
+import { colorFor } from '@/lib/view-models';
 import { getMyKycStatus } from './kyc/actions';
 import { presentKycStatus } from '@/lib/kyc-status';
 import type { KycStatus } from '@/lib/types';
 
 export default function ProfilePage() {
   const { user, kycApproved, logout } = useAuth();
-  const name = user?.displayName || currentUser.name;
-  const email = user?.email || currentUser.email;
+  const uid = user?.uid ?? '';
+
+  // Balances, ratings and trip counts are server-owned and live only on the user
+  // document — the auth token carries neither. `layout` requests the same query,
+  // so this is served from the RTK Query cache rather than a second read.
+  const { data: profile, isLoading: profileLoading } = useGetUserQuery(uid, { skip: !uid });
+
+  // Prefer the profile document over the auth record: the user can change their
+  // display name from /profile/edit, and that write lands in Firestore first.
+  const name = profile?.displayName || user?.displayName || 'Traveler';
+  const email = profile?.email || user?.email || '';
 
   // The custom claim only ever says "approved". Read the stored status so a
   // pending or rejected submission is not indistinguishable from never having
@@ -39,11 +49,22 @@ export default function ProfilePage() {
   const kycPresentation = presentKycStatus(effectiveStatus);
   const verified = effectiveStatus === 'APPROVED';
 
+  // Promo points are spendable, so the headline figure is both buckets together —
+  // the same total the wallet and the boost dialogs quote.
+  const points = (profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0);
+
+  // A brand-new account has no ratings. "0.0" reads as a terrible score rather
+  // than an absent one, so show a dash until someone has actually rated them.
+  const rating = (profile?.ratingCount ?? 0) > 0 ? (profile?.averageRating ?? 0).toFixed(1) : '—';
+
+  const dash = <span className="inline-block h-5 w-8 rounded bg-line/70 animate-pulse align-middle" />;
+  const stat = (value: string) => (profileLoading ? dash : value);
+
   const STATS = [
-    { icon: Coins, label: 'Points', value: `${currentUser.points}`, tint: 'text-teal' },
-    { icon: Star, label: 'Rating', value: currentUser.rating.toFixed(1), tint: 'text-amber-500' },
-    { icon: Plane, label: 'Carried', value: `${currentUser.tripsAsTraveler}`, tint: 'text-ocean' },
-    { icon: Package, label: 'Sent', value: `${currentUser.tripsAsSender}`, tint: 'text-teal' },
+    { icon: Coins, label: 'Points', value: stat(`${points}`), tint: 'text-teal' },
+    { icon: Star, label: 'Rating', value: stat(rating), tint: 'text-amber-500' },
+    { icon: Plane, label: 'Carried', value: stat(`${profile?.completedTripsAsTraveler ?? 0}`), tint: 'text-ocean' },
+    { icon: Package, label: 'Sent', value: stat(`${profile?.completedTripsAsSender ?? 0}`), tint: 'text-teal' },
   ];
 
   const LINKS = [
@@ -56,7 +77,7 @@ export default function ProfilePage() {
         ? <span className="inline-block h-3 w-20 rounded bg-line/70 animate-pulse" />
         : kycPresentation.label,
     },
-    { href: '/bids', icon: Wallet, label: 'Points & wallet', note: `${currentUser.points} pts` },
+    { href: '/bids', icon: Wallet, label: 'Points & wallet', note: profileLoading ? '' : `${points} pts` },
     { href: '/home', icon: Settings, label: 'Account settings', note: '' },
   ];
 
@@ -65,7 +86,7 @@ export default function ProfilePage() {
       {/* identity card */}
       <div className="bg-white rounded-2xl border border-line shadow-soft p-6 mb-6">
         <div className="flex items-center gap-4">
-          <Avatar name={name} color={currentUser.color} verified={verified} size={64} />
+          <Avatar name={name} color={colorFor(uid)} verified={verified} size={64} />
           <div className="flex-1 min-w-0">
             <h1 className="font-display text-xl font-semibold text-navy">{name}</h1>
             <p className="text-sm text-ash truncate">{email}</p>

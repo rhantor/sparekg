@@ -10,7 +10,7 @@
  */
 
 export type FlightStatus =
-  | 'DRAFT' | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
+  | 'DRAFT' | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
 
 export type BidStatus =
   | 'PENDING' | 'AGREED' | 'DECLINED' | 'EXPIRED'
@@ -32,13 +32,21 @@ const FLIGHT_TRANSITIONS: Record<FlightStatus, Transition<FlightStatus>[]> = {
   DRAFT: [
     { to: 'LIVE', by: ['TRAVELER', 'SYSTEM'] },
     { to: 'CANCELLED', by: ['TRAVELER', 'ADMIN'] },
+    // Never published, and the plane has gone. Nothing to cancel against.
+    { to: 'EXPIRED', by: ['SYSTEM'] },
   ],
   LIVE: [
     // All listed kg consumed by AGREED bids. Only the server can observe this.
     { to: 'LOCKED', by: ['SYSTEM'] },
     { to: 'IN_TRANSIT', by: ['TRAVELER', 'ADMIN'] },
     { to: 'CANCELLED', by: ['TRAVELER', 'ADMIN'] },
+    // Departure passed with the listing still open — see expireFlights. This is
+    // distinct from CANCELLED: nobody withdrew it, the window simply closed.
+    { to: 'EXPIRED', by: ['SYSTEM'] },
   ],
+  // No EXPIRED edge: LOCKED means every kg is spoken for by an AGREED bid, so a
+  // passed departure is a trip that flew, not a listing that lapsed. Sweeping it
+  // would strand real agreements in a terminal state.
   LOCKED: [
     // Capacity freed again (an agreement fell through) — server-observed only.
     { to: 'LIVE', by: ['SYSTEM'] },
@@ -51,6 +59,7 @@ const FLIGHT_TRANSITIONS: Record<FlightStatus, Transition<FlightStatus>[]> = {
   ],
   COMPLETED: [],
   CANCELLED: [],
+  EXPIRED: [],
 };
 
 // ---- Bid -------------------------------------------------------------------

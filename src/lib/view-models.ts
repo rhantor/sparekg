@@ -8,8 +8,10 @@
  */
 
 import type { Bid, Flight } from './types';
+import { activeUrgencyLevel, isFeaturedNow } from './economy';
 
-export type FlightStatus = 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'DRAFT' | 'CANCELLED';
+export type FlightStatus =
+  | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'DRAFT' | 'CANCELLED' | 'EXPIRED';
 export type BidStatus =
   | 'PENDING' | 'AGREED' | 'HANDED_OVER' | 'DELIVERED'
   | 'DECLINED' | 'EXPIRED' | 'DISPUTED' | 'RESOLVED';
@@ -35,6 +37,8 @@ export interface AppFlight {
   status: FlightStatus;
   bids: number;
   mine?: boolean;
+  /** Featured placement in force right now, expiry already checked. */
+  featured: boolean;
 }
 
 export interface AppBid {
@@ -49,6 +53,10 @@ export interface AppBid {
   offeredTotal: number;
   status: BidStatus;
   role: 'sender' | 'traveler';
+  /** Urgency tier in force right now — the stored level, re-checked against its
+   *  expiry, because `expireBoosts` only sweeps hourly. */
+  urgencyLevel: 0 | 1 | 2 | 3;
+  urgencyExpiresAt: string | null;
 }
 
 /** Cities served on the launch corridors. Unknown codes fall back to the code itself. */
@@ -75,6 +83,26 @@ export function colorFor(seed: string): AvatarColor {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+/**
+ * The status the listing really has right now.
+ *
+ * `expireFlights` sweeps hourly, so a flight can sit departed-but-still-LIVE for
+ * up to an hour. Browse never shows those (it ranges on `departureAt`), but the
+ * traveler's own views read the status straight off the document and would keep
+ * calling a flown listing live. Deriving it here is the same defensive re-check
+ * `isFeaturedNow` makes against `featuredUntil`.
+ *
+ * Only the two open states are rewritten. LOCKED and IN_TRANSIT are journeys
+ * under way, and the terminal states are already final.
+ */
+function effectiveFlightStatus(status: string, departureAt: string | null | undefined): FlightStatus {
+  if (status !== 'LIVE' && status !== 'DRAFT') return status as FlightStatus;
+  if (!departureAt) return status;
+  const departure = Date.parse(departureAt);
+  if (Number.isNaN(departure)) return status;
+  return departure <= Date.now() ? 'EXPIRED' : status;
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -107,8 +135,9 @@ export function toAppFlight(flight: Flight, currentUid?: string): AppFlight {
       (flight.fixedTotalPrice && flight.totalKgAvailable
         ? Math.round(flight.fixedTotalPrice / flight.totalKgAvailable)
         : 0),
+    featured: isFeaturedNow(flight.isFeatured, flight.featuredUntil),
     categories: flight.acceptedCategories ?? [],
-    status: flight.status as FlightStatus,
+    status: effectiveFlightStatus(flight.status, flight.departureAt),
     bids: flight.bidCount ?? 0,
     mine: currentUid ? flight.travelerId === currentUid : undefined,
   };
@@ -142,5 +171,7 @@ export function toAppBid(
     offeredTotal: bid.offeredTotal,
     status: bid.status as BidStatus,
     role,
+    urgencyLevel: activeUrgencyLevel(bid.urgencyLevel, bid.urgencyExpiresAt),
+    urgencyExpiresAt: bid.urgencyExpiresAt ?? null,
   };
 }

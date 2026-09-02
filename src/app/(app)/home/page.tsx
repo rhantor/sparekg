@@ -4,6 +4,7 @@ import { Coins, Star, Plane, ShieldCheck, PlusCircle, Search, ArrowRight, Layers
 import { PageHeader } from '@/components/app/PageHeader';
 import { FlightCard } from '@/components/app/FlightCard';
 import { StatusBadge } from '@/components/app/StatusBadge';
+import { WelcomeBonusDialog } from '@/components/app/WelcomeBonusDialog';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/lib/auth-context';
 import { useGetUserQuery, useMyFlightsQuery, useMyBidsQuery } from '@/lib/store/api';
@@ -23,9 +24,12 @@ export default function HomePage() {
   const { data: flights, isLoading: flightsLoading } = useMyFlightsQuery(uid, { skip: !uid });
   const { data: bids } = useMyBidsQuery(uid, { skip: !uid });
 
+  // Mapped before filtering, not after: toAppFlight is what rewrites a listing
+  // whose departure has passed to EXPIRED. Filtering the raw documents first
+  // would keep a flown flight in "active" until the hourly sweep caught up.
   const activeFlights = (flights ?? [])
-    .filter((f) => f.status === 'LIVE')
-    .map((f) => toAppFlight(f, uid));
+    .map((f) => toAppFlight(f, uid))
+    .filter((f) => f.status === 'LIVE');
 
   const recentBids = (bids ?? []).slice(0, 5).map((b) => toAppBid(b, 'sender'));
 
@@ -156,6 +160,12 @@ export default function HomePage() {
           You haven&apos;t placed any bids yet. <Link href="/flights" className="text-teal font-semibold">Find a flight</Link>.
         </div>
       )}
+
+      {/* Mounted here, not on the sign-up form: the bonus is written by an auth
+          trigger that finishes after the redirect, and email and Google sign-up
+          both land on this page. The dialog decides for itself whether there is
+          anything to celebrate. */}
+      {uid && <WelcomeBonusDialog uid={uid} />}
     </div>
   );
 }

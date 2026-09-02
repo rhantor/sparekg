@@ -50,6 +50,12 @@ export interface PointsEconomyConfig {
   monthlyFreeCap: number;
   flightPostCost: number;
   bidSubmitCost: number;
+  /** Price of one 24-hour block of featured placement on a flight listing. */
+  featuredCostPer24h: number;
+  /** Urgency tiers. Each level is sold as one fixed block, not by the hour. */
+  urgencyLevel1CostPer24h: number;
+  urgencyLevel2CostPer48h: number;
+  urgencyLevel3CostPer72h: number;
   relistCost: number;
   tripRewardTraveler: number;
   deliveryRewardSender: number;
@@ -68,6 +74,10 @@ export const DEFAULT_POINTS_ECONOMY: PointsEconomyConfig = {
   monthlyFreeCap: 200,
   flightPostCost: 0,
   bidSubmitCost: 10,
+  featuredCostPer24h: 15,
+  urgencyLevel1CostPer24h: 10,
+  urgencyLevel2CostPer48h: 25,
+  urgencyLevel3CostPer72h: 50,
   relistCost: 5,
   tripRewardTraveler: 25,
   deliveryRewardSender: 10,
@@ -94,6 +104,72 @@ export async function getPointsEconomy(): Promise<PointsEconomyConfig> {
   } catch {
     return DEFAULT_POINTS_ECONOMY;
   }
+}
+
+/**
+ * Feature flags from `app_config/main`.
+ *
+ * Both boosts default to OFF: production has no `app_config/main` document, so
+ * a default of ON would put both paid features live the moment this deploys —
+ * before their pricing is settled. Shipping the code dark lets an admin switch
+ * either on from `/admin/settings` without a deploy, and switch it back off as
+ * a kill switch if pricing is wrong or a promotion has to stop mid-flight.
+ * Absent or non-boolean values fall back to the default rather than to `true`,
+ * so a malformed document cannot silently start charging people.
+ */
+export interface FeatureFlags {
+  enableFeaturedListings: boolean;
+  enableUrgencyBoosts: boolean;
+}
+
+export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
+  enableFeaturedListings: false,
+  enableUrgencyBoosts: false,
+};
+
+export async function getFeatureFlags(): Promise<FeatureFlags> {
+  try {
+    const snap = await db().collection('app_config').doc('main').get();
+    const override = snap.exists ? snap.data()?.featureFlags : null;
+    if (!override) return DEFAULT_FEATURE_FLAGS;
+
+    const merged = { ...DEFAULT_FEATURE_FLAGS };
+    for (const key of Object.keys(DEFAULT_FEATURE_FLAGS) as (keyof FeatureFlags)[]) {
+      if (typeof override[key] === 'boolean') merged[key] = override[key];
+    }
+    return merged;
+  } catch {
+    return DEFAULT_FEATURE_FLAGS;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Boost pricing
+// ---------------------------------------------------------------------------
+
+export type UrgencyLevel = 1 | 2 | 3;
+
+/** Hours of visibility bought at each urgency tier. Fixed blocks, not hourly. */
+export const URGENCY_HOURS: Record<UrgencyLevel, number> = { 1: 24, 2: 48, 3: 72 };
+
+export function urgencyCost(economy: PointsEconomyConfig, level: UrgencyLevel): number {
+  switch (level) {
+    case 1: return economy.urgencyLevel1CostPer24h;
+    case 2: return economy.urgencyLevel2CostPer48h;
+    case 3: return economy.urgencyLevel3CostPer72h;
+  }
+}
+
+/**
+ * Extends an existing boost instead of truncating it.
+ *
+ * Buying a second block while the first is still running has to add to the time
+ * remaining — starting the clock again from now would silently destroy paid-for
+ * visibility, which is a refund request waiting to happen.
+ */
+export function extendExpiry(current: Date | null, hours: number, now = new Date()): Date {
+  const base = current && current > now ? current : now;
+  return new Date(base.getTime() + hours * 3600_000);
 }
 
 // ---------------------------------------------------------------------------
@@ -313,9 +389,23 @@ export const entryIds = {
   bidCapture: (bidId: string) => `capture_${bidId}`,
   bidRefund: (bidId: string) => `refund_${bidId}`,
   flightPost: (flightId: string) => `post_${flightId}`,
+  /**
+   * Boosts are repeatable on the same document, so the id carries a purchase
+   * sequence taken from a counter on that document. Within one transaction the
+   * counter is re-read on every retry, so a retried attempt reuses the same id
+   * and cannot double-charge; a committed purchase advances it, so the next one
+   * gets a fresh row.
+   */
+  feature: (flightId: string, seq: number) => `feature_${flightId}_${seq}`,
+  urgency: (bidId: string, seq: number) => `urgency_${bidId}_${seq}`,
 };
 
 /** Current UTC year-month, the period key for the monthly free grant. */
 export function currentPeriod(now = new Date()): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** First instant of the period `currentPeriod` names, for the activity window. */
+export function periodStart(now = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }

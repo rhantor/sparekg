@@ -17,6 +17,8 @@ const MAX_TOTAL_PRICE = 50000;
 const MAX_DECLARED_VALUE = 100000;
 const MAX_TEXT = 500;
 const MAX_CATEGORIES = 20;
+/** Longest featured run one purchase may buy, in 24-hour blocks. */
+const MAX_FEATURED_BLOCKS = 7;
 const AIRPORT_RE = /^[A-Z]{3}$/;
 const FLIGHT_NO_RE = /^[A-Z0-9]{2,8}$/;
 
@@ -172,4 +174,109 @@ export function validateSubmitBid(data: unknown): SubmitBidInput {
 export function validateBidId(data: unknown): string {
   const d = asRecord(data);
   return str(d.bidId, 'bidId', { max: 128 });
+}
+
+export interface FeatureFlightInput {
+  flightId: string;
+  /** Number of 24-hour blocks to buy, 1..7. */
+  blocks: number;
+}
+
+export function validateFeatureFlight(data: unknown): FeatureFlightInput {
+  const d = asRecord(data);
+  const blocks = num(d.blocks, 'blocks', 1, MAX_FEATURED_BLOCKS);
+  // A fractional block would be charged as a whole one and bought as a fraction,
+  // so reject it rather than rounding a number the caller chose.
+  if (!Number.isInteger(blocks)) fail('"blocks" must be a whole number.');
+  return {
+    flightId: str(d.flightId, 'flightId', { max: 128 }),
+    blocks,
+  };
+}
+
+export interface BoostBidInput {
+  bidId: string;
+  level: 1 | 2 | 3;
+}
+
+export function validateBoostBid(data: unknown): BoostBidInput {
+  const d = asRecord(data);
+  const level = num(d.level, 'level', 1, 3);
+  if (!Number.isInteger(level)) fail('"level" must be 1, 2 or 3.');
+  return {
+    bidId: str(d.bidId, 'bidId', { max: 128 }),
+    level: level as 1 | 2 | 3,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// App config
+// ---------------------------------------------------------------------------
+
+/**
+ * Upper bound on any single economy figure.
+ *
+ * A ceiling matters here in a way it does not for a listing's price: signupBonus
+ * and monthlyFree mint points into the ledger, so a typo with too many zeros
+ * would be a real liability on the books rather than one bad flight.
+ */
+const MAX_ECONOMY_VALUE = 100000;
+
+/** Every tunable in PointsEconomyConfig. Anything not on this list is dropped. */
+const ECONOMY_KEYS = [
+  'signupBonus', 'monthlyFree', 'monthlyFreeCap',
+  'flightPostCost', 'bidSubmitCost',
+  'featuredCostPer24h',
+  'urgencyLevel1CostPer24h', 'urgencyLevel2CostPer48h', 'urgencyLevel3CostPer72h',
+  'relistCost', 'tripRewardTraveler', 'deliveryRewardSender',
+  'referralRewardReferrer', 'referralRewardInvitee',
+] as const;
+
+/** Every switch in FeatureFlags. */
+const FLAG_KEYS = ['enableFeaturedListings', 'enableUrgencyBoosts'] as const;
+
+export interface UpdateAppConfigInput {
+  pointsEconomy: Record<string, number>;
+  featureFlags: Record<string, boolean>;
+}
+
+/**
+ * Narrows an admin's config payload to the known tunables.
+ *
+ * Both sections are partial on purpose: the caller sends only what it is
+ * changing, and `getPointsEconomy` merges whatever is stored over the defaults.
+ * Keys outside the two allowlists are dropped rather than rejected, so adding a
+ * field to the admin form before the server knows about it cannot fail the save.
+ */
+export function validateUpdateAppConfig(data: unknown): UpdateAppConfigInput {
+  const d = asRecord(data);
+
+  const pointsEconomy: Record<string, number> = {};
+  if (d.pointsEconomy !== undefined) {
+    const raw = asRecord(d.pointsEconomy);
+    for (const key of ECONOMY_KEYS) {
+      if (raw[key] === undefined) continue;
+      const value = num(raw[key], key, 0, MAX_ECONOMY_VALUE);
+      // Points are whole units everywhere else in the ledger; a fractional cost
+      // would round somewhere unpredictable rather than being charged as sent.
+      if (!Number.isInteger(value)) fail(`"${key}" must be a whole number.`);
+      pointsEconomy[key] = value;
+    }
+  }
+
+  const featureFlags: Record<string, boolean> = {};
+  if (d.featureFlags !== undefined) {
+    const raw = asRecord(d.featureFlags);
+    for (const key of FLAG_KEYS) {
+      if (raw[key] === undefined) continue;
+      if (typeof raw[key] !== 'boolean') fail(`"${key}" must be true or false.`);
+      featureFlags[key] = raw[key] as boolean;
+    }
+  }
+
+  if (!Object.keys(pointsEconomy).length && !Object.keys(featureFlags).length) {
+    fail('Nothing to update.');
+  }
+
+  return { pointsEconomy, featureFlags };
 }

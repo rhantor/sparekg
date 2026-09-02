@@ -12,7 +12,7 @@
  */
 
 import { createApi } from '@reduxjs/toolkit/query/react';
-import type { Bid, Flight, User } from '../types';
+import type { Bid, Flight, PointsLedgerEntry, User } from '../types';
 import { firebaseBaseQuery, NOW, type QuerySpec } from './baseQuery';
 
 const LIST = 'LIST' as const;
@@ -28,7 +28,7 @@ export interface FlightFilters {
 export const marketplaceApi = createApi({
   reducerPath: 'marketplaceApi',
   baseQuery: firebaseBaseQuery,
-  tagTypes: ['Flight', 'Bid', 'User'],
+  tagTypes: ['Flight', 'Bid', 'User', 'AppConfig'],
   // Firestore reads are billed per document, so hold results a little longer
   // than the 60s default — browsing back and forth shouldn't re-bill.
   keepUnusedDataFor: 180,
@@ -38,6 +38,70 @@ export const marketplaceApi = createApi({
     /** The signed-in user's profile document: balances, ratings, trip counts. */
     getUser: builder.query<User, string>({
       query: (uid) => ({ kind: 'doc', path: 'users', id: uid }),
+      providesTags: (_r, _e, uid) => [{ type: 'User', id: uid }],
+    }),
+
+    // ---- Config -----------------------------------------------------------
+
+    /**
+     * Pricing and feature flags, readable by any signed-in user so the UI can
+     * show what a boost costs before it is bought.
+     *
+     * The document is optional: a project without it errors with `not-found`,
+     * and callers fall back to the defaults in `src/lib/economy.ts` — which are
+     * the same figures the server would charge.
+     */
+    appConfig: builder.query<Record<string, unknown>, void>({
+      query: () => ({ kind: 'doc', path: 'app_config', id: 'main' }),
+      // Pricing changes about never; don't re-bill a read on every mount.
+      keepUnusedDataFor: 3600,
+      providesTags: ['AppConfig'],
+    }),
+
+    /**
+     * Super-admin write of the economy tunables and feature flags.
+     *
+     * Rules deny every client write to `app_config`, so this goes through the
+     * callable like every other mutation. Sends only the sections being changed;
+     * the server merges them over what is stored.
+     */
+    updateAppConfig: builder.mutation<
+      { pointsEconomy: Record<string, number>; featureFlags: Record<string, boolean> },
+      { pointsEconomy?: Record<string, number>; featureFlags?: Record<string, boolean> }
+    >({
+      query: (data) => ({ kind: 'callable', name: 'updateAppConfig', data }),
+      // The one-hour keepUnusedDataFor above means a stale price would otherwise
+      // sit in the cache long after it was changed.
+      invalidatesTags: ['AppConfig'],
+    }),
+
+    // ---- Points -----------------------------------------------------------
+
+    /**
+     * The caller's welcome bonus row, if it has landed.
+     *
+     * The bonus is issued by the `onUserCreate` auth trigger, which runs a moment
+     * behind the redirect into the app and can fail on its own without failing
+     * account creation. So the welcome dialog asks the ledger whether the points
+     * are really there rather than announcing a figure from the config that may
+     * never have been credited.
+     *
+     * `userId` is pinned to the caller and the limit kept small because the rules
+     * only permit a list query that proves both.
+     */
+    signupBonus: builder.query<PointsLedgerEntry[], string>({
+      query: (uid) => ({
+        kind: 'collection',
+        path: 'points_ledger',
+        spec: {
+          where: [
+            ['userId', '==', uid],
+            ['category', '==', 'SIGNUP'],
+          ],
+          orderBy: [['createdAt', 'desc']],
+          limit: 1,
+        },
+      }),
       providesTags: (_r, _e, uid) => [{ type: 'User', id: uid }],
     }),
 
@@ -60,9 +124,27 @@ export const marketplaceApi = createApi({
       },
       // Firestore permits only one range field per query, and departureAt already
       // uses it — so capacity is filtered here rather than costing a second index.
+      //
+      // Featured placement is applied here for the same reason: an `isFeatured`
+      // sort would have to lead the orderBy, and Firestore requires the field a
+      // query ranges on to come first. Sorting the page client-side is what a
+      // traveler paid for — their listing sits above the rest of the results.
+      //
+      // `featuredUntil` is re-checked against the clock rather than trusting the
+      // flag: `expireBoosts` only sweeps hourly, so a run that has just lapsed
+      // can still be flagged and must not keep its placement.
       transformResponse: (docs: Flight[], _meta, filters) => {
         const min = (filters || {}).minKgRemaining;
-        return min ? docs.filter((d) => d.kgRemaining >= min) : docs;
+        const visible = min ? docs.filter((d) => d.kgRemaining >= min) : docs;
+
+        const now = Date.now();
+        const featured = (f: Flight) =>
+          f.isFeatured && f.featuredUntil !== null && Date.parse(f.featuredUntil) > now;
+
+        // Stable within each group: the server already ordered by departureAt,
+        // and Array.prototype.sort is required to be stable, so equal keys keep
+        // that order instead of being reshuffled.
+        return [...visible].sort((a, b) => Number(featured(b)) - Number(featured(a)));
       },
       providesTags: (result) => [
         { type: 'Flight' as const, id: LIST },
@@ -192,11 +274,57 @@ export const marketplaceApi = createApi({
         { type: 'Bid', id: `flight-${arg.flightId}` },
       ],
     }),
+
+    // ---- Paid boosts ------------------------------------------------------
+    //
+    // Both spend points, so the user document is invalidated alongside the
+    // boosted entity — the balance in the header is stale the moment either
+    // call succeeds.
+
+    /** Buys featured placement on the caller's own listing, in 24-hour blocks. */
+    featureFlight: builder.mutation<
+      { flightId: string; featuredUntil: string; pointsSpent: number },
+      { flightId: string; blocks: number; uid: string }
+    >({
+      query: ({ flightId, blocks }) => ({
+        kind: 'callable',
+        name: 'featureFlight',
+        data: { flightId, blocks },
+      }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Flight', id: arg.flightId },
+        // The browse list re-sorts once this listing is featured.
+        { type: 'Flight', id: LIST },
+        { type: 'User', id: arg.uid },
+      ],
+    }),
+
+    /** Buys an urgency boost on the caller's own pending bid. */
+    boostBid: builder.mutation<
+      { bidId: string; level: 1 | 2 | 3; urgencyExpiresAt: string; pointsSpent: number },
+      { bidId: string; level: 1 | 2 | 3; flightId: string; uid: string }
+    >({
+      query: ({ bidId, level }) => ({
+        kind: 'callable',
+        name: 'boostBid',
+        data: { bidId, level },
+      }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Bid', id: arg.bidId },
+        { type: 'Bid', id: LIST },
+        // The traveler's view of this flight's offers is ordered by urgency.
+        { type: 'Bid', id: `flight-${arg.flightId}` },
+        { type: 'User', id: arg.uid },
+      ],
+    }),
   }),
 });
 
 export const {
+  useAppConfigQuery,
+  useUpdateAppConfigMutation,
   useGetUserQuery,
+  useSignupBonusQuery,
   useListFlightsQuery,
   useGetFlightQuery,
   useMyFlightsQuery,
@@ -207,4 +335,6 @@ export const {
   useSubmitBidMutation,
   useAcceptBidMutation,
   useDeclineBidMutation,
+  useFeatureFlightMutation,
+  useBoostBidMutation,
 } = marketplaceApi;

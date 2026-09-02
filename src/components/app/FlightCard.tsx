@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, Star, Plane, Users } from 'lucide-react';
+import { ArrowRight, Star, Plane, Users, Sparkles } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusBadge } from './StatusBadge';
 import type { AppFlight } from '@/lib/app-samples';
@@ -10,8 +10,19 @@ export function FlightCard({ flight }: { flight: AppFlight }) {
   return (
     <Link
       href={`/flights/${flight.id}`}
-      className="group block bg-white rounded-2xl border border-line shadow-soft p-5 hover:shadow-float hover:-translate-y-1 transition-all"
+      className={`group block bg-white rounded-2xl border shadow-soft p-5 hover:shadow-float hover:-translate-y-1 transition-all ${
+        flight.featured ? 'border-amber-500/30 ring-1 ring-amber-500/10' : 'border-line'
+      }`}
     >
+      {/* What the traveler paid for: the card is visibly lifted out of the run
+          of results, not just sorted above them. */}
+      {flight.featured && (
+        <div className="inline-flex items-center gap-1 px-2 py-0.5 mb-3 rounded-md border border-amber-500/15 bg-amber-500/[0.08] text-amber-600 text-[0.68rem] font-semibold">
+          <Sparkles className="w-3 h-3" />
+          Featured
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
           <Avatar name={flight.travelerName} color={flight.travelerColor} verified={flight.verified} size={40} />

@@ -85,6 +85,14 @@ export interface User {
   homeAirportCode: string | null;
   createdAt: string;
   lastActiveAt: string;
+  /**
+   * Last time the user posted a flight or placed a bid.
+   *
+   * Distinct from `lastActiveAt`, which only records opening the app. This is
+   * what the monthly free credit qualifies on, so merely signing in does not
+   * earn it. Null on accounts that predate the field.
+   */
+  lastActivityAt: string | null;
   suspended: boolean;
   suspensionReason: string | null;
 }

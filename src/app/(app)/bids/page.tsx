@@ -1,18 +1,22 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { Package, Plane, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { Package, Plane, ArrowRight, AlertCircle, Loader2, Zap } from 'lucide-react';
 import { PageHeader } from '@/components/app/PageHeader';
 import { StatusBadge } from '@/components/app/StatusBadge';
 import { Avatar } from '@/components/ui/Avatar';
+import { BoostBidDialog } from '@/components/app/BoostBidDialog';
 import { useAuth } from '@/lib/auth-context';
 import {
   useMyBidsQuery,
   useIncomingBidsQuery,
   useAcceptBidMutation,
   useDeclineBidMutation,
+  useGetUserQuery,
+  useAppConfigQuery,
 } from '@/lib/store/api';
 import { toAppBid, type AppBid } from '@/lib/view-models';
+import { URGENCY_TIERS, featureFlagsFrom } from '@/lib/economy';
 import type { Bid } from '@/lib/types';
 
 function BidRow({
@@ -20,25 +24,48 @@ function BidRow({
   asTraveler,
   onAccept,
   onDecline,
+  onBoost,
+  canBoost,
   busy,
 }: {
   bid: AppBid;
   asTraveler: boolean;
   onAccept: () => void;
   onDecline: () => void;
+  onBoost: () => void;
+  canBoost: boolean;
   busy: boolean;
 }) {
+  const tier = URGENCY_TIERS.find((t) => t.level === bid.urgencyLevel);
   return (
     <div className="bg-white rounded-2xl border border-line shadow-soft p-4 flex items-center gap-4">
       <Avatar name={bid.counterpartyName} color={bid.counterpartyColor} size={42} />
       <div className="flex-1 min-w-0">
-        <div className="font-medium text-navy">{bid.counterpartyName}</div>
+        <div className="font-medium text-navy flex items-center gap-2">
+          {bid.counterpartyName}
+          {tier && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-amber-500/15 bg-amber-500/[0.08] text-amber-600 text-[0.68rem] font-semibold">
+              <Zap className="w-3 h-3" />
+              {tier.label}
+            </span>
+          )}
+        </div>
         <div className="text-xs text-ash truncate">{bid.route} · {bid.date} · {bid.kg} KG · {bid.item}</div>
       </div>
       <div className="text-right">
         <div className="font-semibold text-navy">RM {bid.offeredTotal}</div>
         <div className="mt-1"><StatusBadge status={bid.status} /></div>
       </div>
+      {canBoost && !asTraveler && bid.status === 'PENDING' ? (
+        <button
+          onClick={onBoost}
+          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/25 text-amber-600 text-xs font-semibold hover:bg-amber-500/[0.06] transition-colors"
+        >
+          <Zap className="w-3.5 h-3.5" />
+          {bid.urgencyLevel > 0 ? 'Extend' : 'Boost'}
+        </button>
+      ) : null}
+
       {asTraveler && bid.status === 'PENDING' ? (
         <div className="hidden sm:flex gap-2">
           <button
@@ -79,6 +106,17 @@ export default function BidsPage() {
   const [acceptBid, { isLoading: accepting }] = useAcceptBidMutation();
   const [declineBid, { isLoading: declining }] = useDeclineBidMutation();
   const busy = accepting || declining;
+
+  // Balance is read here rather than inside the dialog so the dialog stays a
+  // pure presentation of a decision the page already has the data for.
+  const { data: profile } = useGetUserQuery(uid, { skip: !uid });
+  const balance = (profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0);
+  const [boosting, setBoosting] = useState<AppBid | null>(null);
+
+  // Urgency boosts ship dark. The callable rejects a boost while the flag is
+  // off, so the button is hidden rather than left to fail on click.
+  const { data: appConfig } = useAppConfigQuery();
+  const boostsEnabled = Boolean(featureFlagsFrom(appConfig).enableUrgencyBoosts);
 
   const active = tab === 'sender' ? asSender : asTraveler;
   const list: AppBid[] = ((active.data ?? []) as Bid[]).map((b) => toAppBid(b, tab));
@@ -146,6 +184,8 @@ export default function BidsPage() {
               busy={busy}
               onAccept={() => respond('accept', b)}
               onDecline={() => respond('decline', b)}
+              onBoost={() => setBoosting(b)}
+              canBoost={boostsEnabled}
             />
           ))}
         </div>
@@ -157,6 +197,18 @@ export default function BidsPage() {
             <>No bids on your flights yet. <Link href="/flights/new" className="text-teal font-semibold">Post a flight</Link>.</>
           )}
         </div>
+      )}
+
+      {boosting && boostsEnabled && (
+        <BoostBidDialog
+          open
+          onClose={() => setBoosting(null)}
+          bidId={boosting.id}
+          flightId={boosting.flightId}
+          uid={uid}
+          activeLevel={boosting.urgencyLevel}
+          balance={balance}
+        />
       )}
     </div>
   );

@@ -7,6 +7,7 @@ const STYLES: Record<string, string> = {
   DRAFT: 'bg-ash/10 text-ash',
   CANCELLED: 'bg-rose-500/10 text-rose-600',
   // bid
+  // (EXPIRED is shared: a lapsed flight and a lapsed bid read the same)
   PENDING: 'bg-amber-500/10 text-amber-600',
   AGREED: 'bg-teal/10 text-teal-700',
   HANDED_OVER: 'bg-ocean/10 text-ocean',
