@@ -140,8 +140,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { ok: true };
     } catch (error) {
       const code = (error as { code?: string }).code || '';
-      // User closed the popup — benign, don't surface an error.
+      // User closed the popup — benign, don't surface an error. It is logged
+      // anyway: the same code is reported when the popup completes at Google
+      // but the credential never reaches the opener, and silence there once
+      // made a real failure look like nothing happening at all.
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        console.warn(`Google sign-in ended early (${code}).`);
         return { ok: false };
       }
       // Popup blocked by the browser — fall back to a full-page redirect.
