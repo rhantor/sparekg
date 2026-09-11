@@ -540,7 +540,7 @@ export const postFlight = onCall(async (request) => {
   const ticketFile = admin.storage().bucket().file(input.ticketPath);
   const [ticketExists] = await ticketFile.exists();
   if (!ticketExists) {
-    throw new HttpsError('failed-precondition', 'Upload a picture of your ticket.');
+    throw new HttpsError('failed-precondition', 'Upload your ticket.');
   }
   const [ticketMeta] = await ticketFile.getMetadata();
   const ticketType = String(ticketMeta.contentType ?? '');
