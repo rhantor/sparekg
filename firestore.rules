@@ -66,6 +66,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Ticket proof behind a listing. Kept off the flight document because every
+    // signed-in user can read flights; this is for the traveler and staff only.
+    match /flight_tickets/{flightId} {
+      allow read: if isOwner(resource.data.travelerId) || isAdmin();
+      allow write: if false;
+    }
+
     match /bids/{bidId} {
       // Only the two parties. Rival senders must not see each other's offers —
       // that is both commercially sensitive and a nudge toward off-platform deals.

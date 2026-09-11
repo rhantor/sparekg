@@ -12,7 +12,9 @@
  */
 
 import { createApi } from '@reduxjs/toolkit/query/react';
-import type { Bid, Flight, PointsLedgerEntry, User } from '../types';
+import type {
+  Bid, Flight, FlightTicket, LookupFlightResult, PointsLedgerEntry, TicketRejectionReason, User,
+} from '../types';
 import { firebaseBaseQuery, NOW, type QuerySpec } from './baseQuery';
 
 const LIST = 'LIST' as const;
@@ -179,6 +181,35 @@ export const marketplaceApi = createApi({
       invalidatesTags: [{ type: 'Flight', id: LIST }],
     }),
 
+    /**
+     * A flight's published schedule, used to pre-fill the post form. A mutation
+     * rather than a query: every call is billed by the provider, so it runs only
+     * when the traveler presses the button, never on mount or refocus.
+     */
+    lookupFlight: builder.mutation<LookupFlightResult, { flightNumber: string; date: string }>({
+      query: (data) => ({ kind: 'callable', name: 'lookupFlight', data }),
+    }),
+
+    /** The private ticket record behind a listing — readable by its traveler and staff only. */
+    flightTicket: builder.query<FlightTicket, string>({
+      query: (flightId) => ({ kind: 'doc', path: 'flight_tickets', id: flightId }),
+      providesTags: (_r, _e, flightId) => [{ type: 'Flight' as const, id: `ticket-${flightId}` }],
+    }),
+
+    /** Staff decision on a listing's ticket. A rejection cancels the flight and refunds its bidders. */
+    reviewFlightTicket: builder.mutation<
+      { ticketStatus: 'VERIFIED' | 'REJECTED'; status: string; bidsDeclined: number },
+      { flightId: string; decision: 'VERIFY' | 'REJECT'; reason?: TicketRejectionReason }
+    >({
+      query: (data) => ({ kind: 'callable', name: 'reviewFlightTicket', data }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Flight', id: arg.flightId },
+        { type: 'Flight', id: `ticket-${arg.flightId}` },
+        { type: 'Flight', id: LIST },
+        { type: 'Bid', id: `flight-${arg.flightId}` },
+      ],
+    }),
+
     // ---- Bids -------------------------------------------------------------
 
     /**
@@ -323,6 +354,9 @@ export const marketplaceApi = createApi({
 export const {
   useAppConfigQuery,
   useUpdateAppConfigMutation,
+  useFlightTicketQuery,
+  useReviewFlightTicketMutation,
+  useLookupFlightMutation,
   useGetUserQuery,
   useSignupBonusQuery,
   useListFlightsQuery,

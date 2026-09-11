@@ -2,6 +2,7 @@ import { auth as authTriggers } from 'firebase-functions/v1';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 
@@ -19,6 +20,9 @@ import {
   validateFeatureFlight,
   validateBoostBid,
   validateUpdateAppConfig,
+  validateReviewFlightTicket,
+  validateLookupFlight,
+  servedRoute,
 } from './validation';
 import {
   prepareEntry,
@@ -508,8 +512,48 @@ export const postFlight = onCall(async (request) => {
   const input = validatePostFlight(request.data);
   const user = await requireActiveUser(caller.uid);
 
+  // One listing per real flight. Two listings for the same seat split the
+  // senders between them, and one ticket cannot back both. Closed listings
+  // don't count, so a traveler whose ticket was rejected can post again.
+  // Equality on two fields needs no composite index.
+  const sameFlight = await db.collection('flights')
+    .where('travelerId', '==', caller.uid)
+    .where('flightNumber', '==', input.flightNumber)
+    .get();
+  const duplicate = sameFlight.docs.some((doc) => {
+    const existing = doc.data();
+    if (['CANCELLED', 'EXPIRED', 'COMPLETED'].includes(existing.status)) return false;
+    const gap = Math.abs(existing.departureAt.toMillis() - input.departureAt.getTime());
+    return gap < 24 * 3600_000;
+  });
+  if (duplicate) {
+    throw new HttpsError('already-exists', 'You have already listed this flight.');
+  }
+
+  const scheduleCheck = await scheduleCheckFor(input);
+
+  // The payload only names a path, so prove it is a real file in the caller's
+  // own folder. Otherwise a listing could cite someone else's ticket, or none.
+  if (!input.ticketPath.startsWith(`tickets/${caller.uid}/`)) {
+    throw new HttpsError('permission-denied', 'That ticket does not belong to you.');
+  }
+  const ticketFile = admin.storage().bucket().file(input.ticketPath);
+  const [ticketExists] = await ticketFile.exists();
+  if (!ticketExists) {
+    throw new HttpsError('failed-precondition', 'Upload a picture of your ticket.');
+  }
+  const [ticketMeta] = await ticketFile.getMetadata();
+  const ticketType = String(ticketMeta.contentType ?? '');
+  // Same list as storage.rules. Checked again here because the rules only
+  // govern new uploads, not whatever already sits at the path.
+  if (!/^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/.test(ticketType)) {
+    throw new HttpsError('invalid-argument', 'The ticket must be a photo (JPG, PNG, WebP, HEIC) or a PDF.');
+  }
+
   const flightRef = db.collection('flights').doc();
-  await flightRef.set({
+  const ticketRef = db.collection('flight_tickets').doc(flightRef.id);
+  const batch = db.batch();
+  batch.set(flightRef, {
     flightId: flightRef.id,
     travelerId: caller.uid,
     traveler: {
@@ -540,9 +584,22 @@ export const postFlight = onCall(async (request) => {
     isFeatured: false,
     featuredUntil: null,
     bidCount: 0,
+    // Staff check the ticket against the listing; acceptBid waits for VERIFIED.
+    ticketStatus: 'PENDING',
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  // Written with the flight so a listing never exists without its proof.
+  batch.set(ticketRef, {
+    flightId: flightRef.id,
+    travelerId: caller.uid,
+    storagePath: input.ticketPath,
+    contentType: ticketType,
+    // Staff-facing only, which is why it lives here and not on the public flight.
+    scheduleCheck,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  await batch.commit();
 
   // Marks the account as taking part this month, which is what qualifies it for
   // the monthly free credit. Best-effort: a failure here must not undo a posted
@@ -945,6 +1002,16 @@ export const acceptBid = onCall(async (request) => {
     if (!flightSnap.exists) throw new HttpsError('not-found', 'That flight no longer exists.');
     const flight = flightSnap.data()!;
 
+    // A deal is only struck on a listing whose ticket staff have checked. This is
+    // also what lets a ticket rejection close a listing without unwinding an
+    // agreed bid — there can never be one.
+    if (flight.ticketStatus !== 'VERIFIED') {
+      throw new HttpsError(
+        'failed-precondition',
+        'You can accept bids once our team has verified your ticket.',
+      );
+    }
+
     if (bid.kgRequested > flight.kgRemaining) {
       throw new HttpsError(
         'failed-precondition',
@@ -1196,6 +1263,283 @@ export const expireFlights = onSchedule('every 60 minutes', async () => {
   logger.info('Expired departed flights', {
     scanned: departed.size, expired, bidsExpired, failed,
   });
+});
+
+// ---------------------------------------------------------------------------
+// Flight schedule lookup (AeroDataBox via RapidAPI)
+// ---------------------------------------------------------------------------
+
+/** Set with `firebase functions:secrets:set AERODATABOX_KEY` — the RapidAPI key. */
+const AERODATABOX_KEY = defineSecret('AERODATABOX_KEY');
+const AERODATABOX_HOST = 'aerodatabox.p.rapidapi.com';
+/** Provider calls one user may trigger per UTC day. Each call is billed. */
+const LOOKUPS_PER_DAY = 20;
+/** How long one schedule answer is reused before the provider is asked again. */
+const LOOKUP_CACHE_MS = 6 * 3600_000;
+/** How far a posted departure may sit from the published one and still match. */
+const SCHEDULE_MATCH_TOLERANCE_MS = 90 * 60_000;
+
+/** Stored in `flight_lookups` and returned to the client. Mirrors FlightScheduleMatch in src/lib/types.ts. */
+interface ScheduleRow {
+  airline: string;
+  flightNumber: string;
+  originAirport: string;
+  destinationAirport: string;
+  departureAt: string;
+  arrivalAt: string | null;
+  served: boolean;
+}
+
+/** The slice of the provider's FlightContract we read. Everything is unknown until checked. */
+interface ProviderMovement {
+  airport?: { iata?: unknown };
+  scheduledTime?: { utc?: unknown };
+}
+interface ProviderFlight {
+  number?: unknown;
+  isCargo?: unknown;
+  airline?: { name?: unknown };
+  departure?: ProviderMovement;
+  arrival?: ProviderMovement;
+}
+
+/** The provider writes "2025-02-01 08:55Z"; ISO-8601 wants a "T" there. */
+function providerTime(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const ms = Date.parse(value.replace(' ', 'T'));
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
+async function fetchSchedule(flightNumber: string, date: string, key: string): Promise<ScheduleRow[]> {
+  const url = `https://${AERODATABOX_HOST}/flights/number/${encodeURIComponent(flightNumber)}/${date}`
+    + '?dateLocalRole=Departure&withAircraftImage=false&withLocation=false';
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': AERODATABOX_HOST },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (error) {
+    logger.warn('Flight lookup request failed', { flightNumber, date, error });
+    throw new HttpsError('unavailable', 'Flight lookup is unavailable right now. Enter the details yourself.');
+  }
+
+  // 204 is the provider's "no such flight on that date".
+  if (res.status === 204 || res.status === 404) return [];
+  if (!res.ok) {
+    // The status is logged, never the key; 401/403 here means the secret is wrong or the plan lapsed.
+    logger.warn('Flight lookup rejected', { flightNumber, date, status: res.status });
+    throw new HttpsError('unavailable', 'Flight lookup is unavailable right now. Enter the details yourself.');
+  }
+
+  const body: unknown = await res.json();
+  if (!Array.isArray(body)) return [];
+
+  const rows: ScheduleRow[] = [];
+  for (const f of body as ProviderFlight[]) {
+    if (f?.isCargo === true) continue;
+    const origin = f?.departure?.airport?.iata;
+    const destination = f?.arrival?.airport?.iata;
+    const departureAt = providerTime(f?.departure?.scheduledTime?.utc);
+    if (typeof origin !== 'string' || typeof destination !== 'string' || !departureAt) continue;
+    rows.push({
+      airline: typeof f.airline?.name === 'string' ? f.airline.name.slice(0, 80) : '',
+      flightNumber: typeof f.number === 'string'
+        ? f.number.replace(/\s+/g, '').toUpperCase().slice(0, 8)
+        : flightNumber,
+      originAirport: origin.toUpperCase(),
+      destinationAirport: destination.toUpperCase(),
+      departureAt,
+      arrivalAt: providerTime(f?.arrival?.scheduledTime?.utc),
+      served: servedRoute(origin.toUpperCase(), destination.toUpperCase()),
+    });
+  }
+  return rows.slice(0, 10);
+}
+
+/**
+ * Looks up a flight's published schedule so the post form can pre-fill it.
+ *
+ * Answers are cached per flight and date, so repeat lookups — the same traveler
+ * pressing the button twice, or two travelers on one plane — cost nothing. Only
+ * calls that actually reach the provider count toward the daily cap.
+ */
+export const lookupFlight = onCall({ secrets: [AERODATABOX_KEY] }, async (request) => {
+  const caller = requireVerified(request);
+  const input = validateLookupFlight(request.data);
+
+  const cacheRef = db.collection('flight_lookups').doc(`${input.flightNumber}_${input.date}`);
+  const cached = await cacheRef.get();
+  const fetchedAt = cached.data()?.fetchedAt as admin.firestore.Timestamp | undefined;
+  if (cached.exists && fetchedAt && Date.now() - fetchedAt.toMillis() < LOOKUP_CACHE_MS) {
+    return { flights: cached.data()!.flights as ScheduleRow[] };
+  }
+
+  const key = AERODATABOX_KEY.value();
+  if (!key) {
+    throw new HttpsError('failed-precondition', 'Flight lookup is not set up yet. Enter the details yourself.');
+  }
+
+  const day = new Date().toISOString().slice(0, 10);
+  const usageRef = db.collection('lookup_usage').doc(`${caller.uid}_${day}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(usageRef);
+    const count = snap.exists ? Number(snap.data()!.count) || 0 : 0;
+    if (count >= LOOKUPS_PER_DAY) {
+      throw new HttpsError('resource-exhausted', 'You have used today\'s flight lookups. Enter the details yourself.');
+    }
+    tx.set(usageRef, { uid: caller.uid, day, count: count + 1, updatedAt: FieldValue.serverTimestamp() });
+  });
+
+  const flights = await fetchSchedule(input.flightNumber, input.date, key);
+  // Cached even when empty: "no such flight" is an answer too, and the most likely one to be retried.
+  await cacheRef.set({
+    flightNumber: input.flightNumber,
+    date: input.date,
+    flights,
+    fetchedAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info('Flight looked up', { uid: caller.uid, flightNumber: input.flightNumber, date: input.date, results: flights.length });
+  return { flights };
+});
+
+/**
+ * Compares a new listing with the published schedule, using cached lookups only.
+ *
+ * Posting never waits on or pays for a provider call, and never fails because
+ * of one. A traveler who did not use the lookup is simply UNCHECKED. The result
+ * is shown to staff next to the ticket; it does not block the listing.
+ */
+async function scheduleCheckFor(input: {
+  flightNumber: string;
+  originAirport: string;
+  destinationAirport: string;
+  departureAt: Date;
+}): Promise<'MATCH' | 'MISMATCH' | 'UNCHECKED'> {
+  try {
+    // The cache is keyed by the origin's local date, which can be either side of
+    // the UTC date — so read all three.
+    const dates = [-1, 0, 1].map((offset) =>
+      new Date(input.departureAt.getTime() + offset * 86_400_000).toISOString().slice(0, 10));
+    const snaps = await db.getAll(
+      ...dates.map((d) => db.collection('flight_lookups').doc(`${input.flightNumber}_${d}`)),
+    );
+    const rows = snaps.flatMap((s) => (s.exists ? (s.data()!.flights as ScheduleRow[]) ?? [] : []));
+    if (rows.length === 0) return 'UNCHECKED';
+
+    const match = rows.some((r) =>
+      r.originAirport === input.originAirport
+      && r.destinationAirport === input.destinationAirport
+      && Math.abs(Date.parse(r.departureAt) - input.departureAt.getTime()) <= SCHEDULE_MATCH_TOLERANCE_MS);
+    return match ? 'MATCH' : 'MISMATCH';
+  } catch (error) {
+    logger.warn('Schedule check failed', { flightNumber: input.flightNumber, error });
+    return 'UNCHECKED';
+  }
+}
+
+/**
+ * Staff decision on the ticket behind a listing.
+ *
+ * VERIFY unlocks acceptBid for the flight. REJECT cancels the listing and
+ * returns every pending bidder's hold — the same unwind expireFlights does.
+ * acceptBid refuses unverified listings, so a flight still awaiting review
+ * cannot hold an agreed bid and a rejection never strands a deal.
+ */
+export const reviewFlightTicket = onCall(async (request) => {
+  const caller = requireAuth(request);
+  if (!caller.isAdmin) {
+    throw new HttpsError('permission-denied', 'Only staff can review tickets.');
+  }
+  const input = validateReviewFlightTicket(request.data);
+
+  const flightRef = db.collection('flights').doc(input.flightId);
+  const ticketRef = db.collection('flight_tickets').doc(input.flightId);
+
+  const result = await db.runTransaction(async (tx) => {
+    // Every read first — Firestore forbids a read after a write.
+    const flightSnap = await tx.get(flightRef);
+    const ticketSnap = await tx.get(ticketRef);
+    if (!flightSnap.exists) throw new HttpsError('not-found', 'That flight no longer exists.');
+    if (!ticketSnap.exists) {
+      throw new HttpsError('failed-precondition', 'This flight has no ticket on file.');
+    }
+    const flight = flightSnap.data()!;
+    const fromStatus = flight.status as FlightStatus;
+
+    // Two reviewers opening the same queue item is the ordinary case; the second
+    // must be told, not allowed to overwrite the first.
+    if (flight.ticketStatus !== 'PENDING') {
+      throw new HttpsError(
+        'failed-precondition',
+        `This ticket was already reviewed (${String(flight.ticketStatus).toLowerCase()}).`,
+      );
+    }
+
+    // A listing that already lapsed has nothing left to cancel, but the ticket
+    // is still marked so the record says what staff decided.
+    const cancel = input.decision === 'REJECT'
+      && canTransitionFlight(fromStatus, 'CANCELLED', 'ADMIN').allowed;
+
+    const refunds = [];
+    if (cancel) {
+      const pending = await tx.get(
+        db.collection('bids')
+          .where('flightId', '==', input.flightId)
+          .where('status', '==', 'PENDING' satisfies BidStatus)
+          .limit(200),
+      );
+      for (const bidDoc of pending.docs) {
+        refunds.push({
+          ref: bidDoc.ref,
+          entry: await prepareBidRefund(tx, bidDoc.id, bidDoc.data(), 'Listing closed — hold returned'),
+        });
+      }
+    }
+
+    const ticketStatus = input.decision === 'VERIFY' ? 'VERIFIED' : 'REJECTED';
+    const toStatus: FlightStatus = cancel ? 'CANCELLED' : fromStatus;
+    const now = FieldValue.serverTimestamp();
+
+    tx.update(flightRef, {
+      ticketStatus,
+      ...(cancel ? { status: toStatus } : {}),
+      updatedAt: now,
+    });
+    tx.update(ticketRef, {
+      reviewStatus: ticketStatus,
+      rejectionReason: input.reason,
+      reviewedBy: caller.uid,
+      reviewedAt: now,
+    });
+    for (const refund of refunds) {
+      tx.update(refund.ref, { status: 'DECLINED' satisfies BidStatus, pointsHeld: 0 });
+      if (refund.entry) commitEntry(tx, refund.entry);
+    }
+
+    // Staged in the same transaction so the decision and its audit row land
+    // together or not at all.
+    const auditRef = db.collection('audit_log').doc();
+    tx.create(auditRef, {
+      entryId: auditRef.id,
+      actorUid: caller.uid,
+      actorName: caller.email ?? caller.uid,
+      action: ticketStatus === 'VERIFIED' ? 'FLIGHT_TICKET_VERIFIED' : 'FLIGHT_TICKET_REJECTED',
+      targetType: 'flight',
+      targetId: input.flightId,
+      reason: input.reason ?? 'Ticket matches the listing',
+      beforeState: { ticketStatus: 'PENDING', status: fromStatus },
+      afterState: { ticketStatus, status: toStatus, bidsDeclined: refunds.length },
+      timestamp: now,
+    });
+
+    return { ticketStatus, status: toStatus, bidsDeclined: refunds.length };
+  });
+
+  logger.info('Flight ticket reviewed', { flightId: input.flightId, by: caller.uid, ...result });
+  return result;
 });
 
 /**

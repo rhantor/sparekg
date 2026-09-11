@@ -12,6 +12,18 @@ service firebase.storage {
       allow read: if false; // Only Admin SDK can read
     }
 
+    // Flight ticket proof — same shape as KYC: owner uploads, nobody reads
+    // except the Admin SDK. postFlight checks the object exists under the
+    // caller's own folder before accepting the listing.
+    match /tickets/{userId}/{fileName} {
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.size < 5 * 1024 * 1024 // 5MB limit
+                    // Explicit formats, not image/*: an SVG is an image that can carry script.
+                    && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)|application/pdf');
+      allow read, update, delete: if false;
+    }
+
     // Profile photos — public read (shown on listings), owner write only.
     match /avatars/{userId}/{fileName} {
       allow read: if true;

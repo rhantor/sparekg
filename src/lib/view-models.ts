@@ -9,6 +9,7 @@
 
 import type { Bid, Flight } from './types';
 import { activeUrgencyLevel, isFeaturedNow } from './economy';
+import { cityFor, tzFor, formatAirportTime } from './airports';
 
 export type FlightStatus =
   | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'DRAFT' | 'CANCELLED' | 'EXPIRED';
@@ -29,6 +30,10 @@ export interface AppFlight {
   destination: string;
   destinationCode: string;
   date: string;
+  /** Departure in the origin airport's local time, e.g. "20 Sept, 14:30 · Kuala Lumpur time". */
+  departureTime: string;
+  /** Arrival in the destination airport's local time. */
+  arrivalTime: string;
   airline: string;
   kgTotal: number;
   kgLeft: number;
@@ -59,19 +64,7 @@ export interface AppBid {
   urgencyExpiresAt: string | null;
 }
 
-/** Cities served on the launch corridors. Unknown codes fall back to the code itself. */
-const AIRPORTS: Record<string, string> = {
-  KUL: 'Kuala Lumpur',
-  PEN: 'Penang',
-  JHB: 'Johor Bahru',
-  DAC: 'Dhaka',
-  CGP: 'Chittagong',
-  ZYL: 'Sylhet',
-};
-
-export function cityFor(code: string): string {
-  return AIRPORTS[code] ?? code;
-}
+export { cityFor };
 
 export const AVATAR_COLORS: AvatarColor[] = ['ocean', 'teal', 'navy'];
 
@@ -105,12 +98,22 @@ function effectiveFlightStatus(status: string, departureAt: string | null | unde
   return departure <= Date.now() ? 'EXPIRED' : status;
 }
 
-function formatDate(iso: string | null | undefined): string {
+/**
+ * A flight's date is the date at its origin airport, not in the viewer's zone —
+ * otherwise a 00:30 departure reads as the previous day to someone further west.
+ */
+function formatDate(iso: string | null | undefined, airportCode?: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return d.toLocaleDateString('en-GB', {
+    timeZone: airportCode ? tzFor(airportCode) : undefined,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
+
 
 export function toAppFlight(flight: Flight, currentUid?: string): AppFlight {
   return {
@@ -124,7 +127,9 @@ export function toAppFlight(flight: Flight, currentUid?: string): AppFlight {
     originCode: flight.originAirport,
     destination: cityFor(flight.destinationAirport),
     destinationCode: flight.destinationAirport,
-    date: formatDate(flight.departureAt),
+    date: formatDate(flight.departureAt, flight.originAirport),
+    departureTime: formatAirportTime(flight.departureAt, flight.originAirport),
+    arrivalTime: formatAirportTime(flight.arrivalAt, flight.destinationAirport),
     airline: flight.airline,
     kgTotal: flight.totalKgAvailable,
     kgLeft: flight.kgRemaining,
@@ -165,7 +170,7 @@ export function toAppBid(
     route: flight
       ? `${flight.originAirport} → ${flight.destinationAirport}`
       : '—',
-    date: formatDate(flight?.departureAt ?? bid.createdAt),
+    date: flight ? formatDate(flight.departureAt, flight.originAirport) : formatDate(bid.createdAt),
     kg: bid.kgRequested,
     item: bid.itemDescription,
     offeredTotal: bid.offeredTotal,

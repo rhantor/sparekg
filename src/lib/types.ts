@@ -11,6 +11,13 @@ export type FlightStatus = 'DRAFT' | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLET
 
 export type BidStatus = 'PENDING' | 'AGREED' | 'DECLINED' | 'EXPIRED' | 'HANDED_OVER' | 'DELIVERED' | 'DISPUTED' | 'RESOLVED';
 
+/** Staff check of the ticket behind a listing. acceptBid waits for VERIFIED. */
+export type TicketStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
+
+/** Mirrors TICKET_REJECTION_REASONS in functions/src/validation.ts. */
+export type TicketRejectionReason =
+  | 'NAME_MISMATCH' | 'FLIGHT_MISMATCH' | 'UNREADABLE' | 'NOT_A_TICKET' | 'SUSPICIOUS' | 'OTHER';
+
 export type PayoutStatus = 'ESCROWED' | 'RELEASED' | 'REFUNDED' | 'DISPUTED';
 
 export type DisputeStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_FOR_SENDER' | 'RESOLVED_FOR_TRAVELER' | 'SPLIT' | 'CLOSED_INVALID';
@@ -41,7 +48,8 @@ export type AuditAction =
   | 'USER_SUSPENDED' | 'USER_UNSUSPENDED' | 'USER_DELETED'
   | 'POINTS_ADJUSTED' | 'ROLE_GRANTED' | 'ROLE_REVOKED'
   | 'DISPUTE_RESOLVED' | 'CONTENT_UPDATED' | 'CONFIG_CHANGED'
-  | 'REPORT_DISMISSED' | 'REPORT_ACTION_TAKEN';
+  | 'REPORT_DISMISSED' | 'REPORT_ACTION_TAKEN'
+  | 'FLIGHT_TICKET_VERIFIED' | 'FLIGHT_TICKET_REJECTED';
 
 export type PurchaseStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
 
@@ -143,8 +151,41 @@ export interface Flight {
   isFeatured: boolean;
   featuredUntil: string | null;
   bidCount: number;
+  /** Absent on listings posted before ticket proof was required. */
+  ticketStatus?: TicketStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One scheduled flight as reported by the flight-data provider (lookupFlight). */
+export interface FlightScheduleMatch {
+  airline: string;
+  flightNumber: string;
+  originAirport: string;
+  destinationAirport: string;
+  /** ISO-8601 UTC. */
+  departureAt: string;
+  arrivalAt: string | null;
+  /** Both airports are on a corridor the marketplace serves. */
+  served: boolean;
+}
+
+export interface LookupFlightResult {
+  flights: FlightScheduleMatch[];
+}
+
+/** Private proof behind a listing (`flight_tickets/{flightId}`) — traveler and staff only. */
+export interface FlightTicket {
+  flightId: string;
+  travelerId: string;
+  storagePath: string;
+  contentType: string;
+  /** Listing vs. the provider's published schedule, from cached lookups only. */
+  scheduleCheck?: 'MATCH' | 'MISMATCH' | 'UNCHECKED';
+  reviewStatus?: TicketStatus;
+  rejectionReason?: TicketRejectionReason | null;
+  reviewedAt?: string | null;
+  createdAt: string;
 }
 
 export interface Bid {

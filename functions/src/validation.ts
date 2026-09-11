@@ -19,6 +19,29 @@ const MAX_TEXT = 500;
 const MAX_CATEGORIES = 20;
 /** Longest featured run one purchase may buy, in 24-hour blocks. */
 const MAX_FEATURED_BLOCKS = 7;
+/**
+ * Earliest a listing may depart, in hours from now. Anything sooner leaves
+ * senders no realistic time to bid, get accepted and hand over a parcel.
+ */
+export const MIN_DEPARTURE_LEAD_HOURS = 12;
+/** Furthest ahead a listing may depart. Plans further out change too often to bid on. */
+export const MAX_DEPARTURE_LEAD_DAYS = 60;
+/** Longest plausible journey, stops included. Anything longer is a mistyped date. */
+export const MAX_FLIGHT_HOURS = 24;
+/** Airports on the launch corridors, by country. Mirrors AIRPORTS in src/lib/airports.ts. */
+const AIRPORT_COUNTRY: Record<string, 'MY' | 'BD'> = {
+  KUL: 'MY', PEN: 'MY', JHB: 'MY',
+  DAC: 'BD', CGP: 'BD', ZYL: 'BD',
+};
+
+/** Both airports are on a corridor we serve: one in each country. */
+export function servedRoute(origin: string, destination: string): boolean {
+  const a = AIRPORT_COUNTRY[origin];
+  const b = AIRPORT_COUNTRY[destination];
+  return !!a && !!b && a !== b;
+}
+/** Tickets live in the uploader's own folder; the uid is checked in postFlight. */
+const TICKET_PATH_RE = /^tickets\/[A-Za-z0-9]{1,128}\/[A-Za-z0-9_.-]{1,100}$/;
 const AIRPORT_RE = /^[A-Z]{3}$/;
 const FLIGHT_NO_RE = /^[A-Z0-9]{2,8}$/;
 
@@ -94,6 +117,8 @@ export interface PostFlightInput {
   acceptedCategories: string[];
   prohibitedItems: string[];
   specialNotes: string | null;
+  /** Storage path of the uploaded ticket image. Ownership is checked by the caller. */
+  ticketPath: string;
 }
 
 export function validatePostFlight(data: unknown): PostFlightInput {
@@ -101,14 +126,32 @@ export function validatePostFlight(data: unknown): PostFlightInput {
 
   const originAirport = airport(d.originAirport, 'originAirport');
   const destinationAirport = airport(d.destinationAirport, 'destinationAirport');
-  if (originAirport === destinationAirport) {
-    fail('Origin and destination must be different airports.');
+  // Only corridors we serve: an unknown airport has no time zone in the app, and
+  // a same-country pair is not a route the marketplace runs.
+  const originCountry = AIRPORT_COUNTRY[originAirport];
+  const destinationCountry = AIRPORT_COUNTRY[destinationAirport];
+  if (!originCountry || !destinationCountry) fail('That route is not served yet.');
+  if (originCountry === destinationCountry) {
+    fail('Origin and destination must be in different countries.');
   }
 
   const departureAt = isoDate(d.departureAt, 'departureAt');
   const arrivalAt = isoDate(d.arrivalAt, 'arrivalAt');
   if (arrivalAt <= departureAt) fail('Arrival must be after departure.');
-  if (departureAt.getTime() < Date.now()) fail('Departure must be in the future.');
+  if (departureAt.getTime() < Date.now() + MIN_DEPARTURE_LEAD_HOURS * 3600_000) {
+    fail(`Departure must be at least ${MIN_DEPARTURE_LEAD_HOURS} hours from now.`);
+  }
+  if (departureAt.getTime() > Date.now() + MAX_DEPARTURE_LEAD_DAYS * 86_400_000) {
+    fail(`Departure must be within ${MAX_DEPARTURE_LEAD_DAYS} days.`);
+  }
+  if (arrivalAt.getTime() - departureAt.getTime() > MAX_FLIGHT_HOURS * 3600_000) {
+    fail(`Arrival must be within ${MAX_FLIGHT_HOURS} hours of departure.`);
+  }
+
+  // Checked before str() so a missing ticket reads as an instruction, not a type error.
+  if (typeof d.ticketPath !== 'string' || !d.ticketPath.trim()) fail('Upload your ticket.');
+  const ticketPath = str(d.ticketPath, 'ticketPath', { max: 250 });
+  if (!TICKET_PATH_RE.test(ticketPath)) fail('Upload your ticket.');
 
   const flightNumber = str(d.flightNumber, 'flightNumber', { max: 8 }).toUpperCase();
   if (!FLIGHT_NO_RE.test(flightNumber)) {
@@ -138,6 +181,7 @@ export function validatePostFlight(data: unknown): PostFlightInput {
     acceptedCategories: stringArray(d.acceptedCategories, 'acceptedCategories'),
     prohibitedItems: stringArray(d.prohibitedItems, 'prohibitedItems'),
     specialNotes: optionalStr(d.specialNotes, 'specialNotes'),
+    ticketPath,
   };
 }
 
@@ -207,6 +251,59 @@ export function validateBoostBid(data: unknown): BoostBidInput {
     bidId: str(d.bidId, 'bidId', { max: 128 }),
     level: level as 1 | 2 | 3,
   };
+}
+
+// ---- lookupFlight ----------------------------------------------------------
+
+export interface LookupFlightInput {
+  flightNumber: string;
+  /** Local departure date at the origin airport, YYYY-MM-DD. */
+  date: string;
+}
+
+export function validateLookupFlight(data: unknown): LookupFlightInput {
+  const d = asRecord(data);
+  // "MH 196" is how it's printed on a boarding pass; the provider wants "MH196".
+  const flightNumber = str(d.flightNumber, 'flightNumber', { max: 10 }).toUpperCase().replace(/\s+/g, '');
+  if (!FLIGHT_NO_RE.test(flightNumber)) fail('"flightNumber" must be 2-8 letters or digits.');
+
+  const date = str(d.date, 'date', { max: 10 });
+  const parsed = Date.parse(`${date}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsed)) fail('"date" must be YYYY-MM-DD.');
+  // Every lookup is billed, so only dates a listing could actually use. A day of
+  // slack either side covers the gap between UTC and the airport's local date.
+  const day = 86_400_000;
+  if (parsed < Date.now() - day || parsed > Date.now() + (MAX_DEPARTURE_LEAD_DAYS + 1) * day) {
+    fail(`"date" must be within the next ${MAX_DEPARTURE_LEAD_DAYS} days.`);
+  }
+  return { flightNumber, date };
+}
+
+// ---- reviewFlightTicket ----------------------------------------------------
+
+/** Why staff turned a ticket down. Mirrored by TICKET_REJECTION_REASONS in src/lib/ticket-review.ts. */
+export const TICKET_REJECTION_REASONS = [
+  'NAME_MISMATCH', 'FLIGHT_MISMATCH', 'UNREADABLE', 'NOT_A_TICKET', 'SUSPICIOUS', 'OTHER',
+] as const;
+export type TicketRejectionReason = (typeof TICKET_REJECTION_REASONS)[number];
+
+export interface ReviewFlightTicketInput {
+  flightId: string;
+  decision: 'VERIFY' | 'REJECT';
+  /** Required for REJECT, always null for VERIFY. */
+  reason: TicketRejectionReason | null;
+}
+
+export function validateReviewFlightTicket(data: unknown): ReviewFlightTicketInput {
+  const d = asRecord(data);
+  const flightId = str(d.flightId, 'flightId', { max: 128 });
+  if (d.decision === 'VERIFY') return { flightId, decision: 'VERIFY', reason: null };
+  if (d.decision !== 'REJECT') fail('"decision" must be VERIFY or REJECT.');
+  // The admin form's <select> constrains nothing; a callable is a public endpoint.
+  if (!TICKET_REJECTION_REASONS.includes(d.reason as TicketRejectionReason)) {
+    fail('Choose a rejection reason from the list.');
+  }
+  return { flightId, decision: 'REJECT', reason: d.reason as TicketRejectionReason };
 }
 
 // ---------------------------------------------------------------------------

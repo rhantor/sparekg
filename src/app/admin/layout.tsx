@@ -8,12 +8,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, ShieldCheck, Users, Coins, Scale,
   Flag, FileText, Settings, ClipboardList, Plane, LogOut, ChevronRight, Sun, Moon, Menu, X,
-  UsersRound,
+  UsersRound, Ticket,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/kyc', label: 'KYC Queue', icon: ShieldCheck, badgeKey: 'kyc' as const },
+  { href: '/admin/flights', label: 'Flight Tickets', icon: Ticket },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/economy', label: 'Economy', icon: Coins },
   { href: '/admin/disputes', label: 'Disputes', icon: Scale, badgeKey: 'disputes' as const },

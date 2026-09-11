@@ -3,7 +3,7 @@ import { use, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Star, Plane, Calendar, Package, Tag, Check, CheckCircle2, Users,
-  AlertCircle, Loader2, ShieldAlert, Sparkles,
+  AlertCircle, Loader2, ShieldAlert, Sparkles, BadgeCheck, Clock, XCircle,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusBadge } from '@/components/app/StatusBadge';
@@ -17,9 +17,12 @@ import {
   useDeclineBidMutation,
   useGetUserQuery,
   useAppConfigQuery,
+  useFlightTicketQuery,
 } from '@/lib/store/api';
 import { toAppFlight, colorFor } from '@/lib/view-models';
 import { isFeaturedNow, featureFlagsFrom } from '@/lib/economy';
+import { TICKET_REJECTION_REASONS } from '@/lib/ticket-review';
+import type { TicketRejectionReason, TicketStatus } from '@/lib/types';
 
 const CATEGORY_FALLBACK = 'General';
 
@@ -38,6 +41,8 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
     { flightId: id, travelerId: uid },
     { skip: !isMine || !uid },
   );
+  // The ticket record is readable by its traveler and staff only.
+  const { data: ticket } = useFlightTicketQuery(id, { skip: !isMine || !uid });
 
   const [submitBid, { isLoading: submitting }] = useSubmitBidMutation();
   const [acceptBid, { isLoading: accepting }] = useAcceptBidMutation();
@@ -85,6 +90,8 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
   // EXPIRED, which the hourly expireFlights sweep has not necessarily done yet.
   const canBid = flight.kgLeft > 0 && flight.status === 'LIVE';
   const departed = flight.status === 'EXPIRED';
+  // acceptBid enforces this; the UI only mirrors it.
+  const ticketVerified = raw.ticketStatus === 'VERIFIED';
 
   async function placeBid() {
     setFormError(null);
@@ -136,7 +143,17 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                   </div>
                 </div>
               </div>
-              <StatusBadge status={flight.status} />
+              <div className="flex items-center gap-2">
+                {ticketVerified && (
+                  <span
+                    className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-teal/10 text-teal-700"
+                    title="Our team checked this traveler's ticket against the listing"
+                  >
+                    <BadgeCheck className="w-3.5 h-3.5" /> Ticket verified
+                  </span>
+                )}
+                <StatusBadge status={flight.status} />
+              </div>
             </div>
 
             <div className="flex items-center justify-between bg-sand rounded-xl px-5 py-4">
@@ -157,7 +174,8 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           <div className="bg-white rounded-2xl border border-line shadow-soft p-6 space-y-4">
-            <Row icon={Calendar} label="Travel date" value={flight.date} />
+            <Row icon={Calendar} label="Departs" value={flight.departureTime} />
+            <Row icon={Calendar} label="Arrives" value={flight.arrivalTime} />
             <Row icon={Plane} label="Airline" value={`${flight.airline} · ${raw.flightNumber}`} />
             <Row icon={Package} label="Capacity" value={`${flight.kgLeft} KG available of ${flight.kgTotal} KG`} />
             <Row icon={Tag} label="Price" value={`RM ${flight.pricePerKg} / kg`} />
@@ -225,6 +243,8 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
               </div>
             )}
 
+            <TicketNotice status={raw.ticketStatus} reason={ticket?.rejectionReason ?? null} />
+
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6">
               <h2 className="font-display text-lg font-semibold text-navy mb-1 flex items-center gap-2">
                 <Users className="w-4 h-4 text-teal" /> Incoming bids
@@ -249,7 +269,8 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                         <div className="flex gap-2">
                           <button
                             onClick={() => respond('accept', b.bidId)}
-                            disabled={responding}
+                            disabled={responding || !ticketVerified}
+                            title={ticketVerified ? undefined : 'Available once your ticket is verified'}
                             className="px-3 py-1.5 rounded-lg bg-teal text-white text-xs font-semibold hover:bg-teal-700 transition-colors disabled:opacity-60"
                           >
                             Accept
@@ -348,6 +369,37 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
       )}
     </div>
   );
+}
+
+/** The traveler's view of where their ticket review stands. Silent once verified. */
+function TicketNotice({ status, reason }: { status?: TicketStatus; reason: TicketRejectionReason | null }) {
+  if (status === 'PENDING') {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-4 mb-4">
+        <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+        <div className="text-sm">
+          <div className="font-semibold text-navy">Ticket under review</div>
+          <p className="text-ash mt-0.5">
+            Senders can already bid. You can accept bids once our team has verified your ticket.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  if (status === 'REJECTED') {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] p-4 mb-4">
+        <XCircle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+        <div className="text-sm">
+          <div className="font-semibold text-navy">Ticket not accepted</div>
+          <p className="text-ash mt-0.5">
+            {TICKET_REJECTION_REASONS[reason ?? 'OTHER'].message} This listing was closed and every bidder&apos;s points were returned.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return null;
 }
 
 function Row({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
