@@ -38,7 +38,10 @@ export function Hero() {
           </motion.p>
           <motion.div variants={item} className="flex flex-wrap gap-3">
             <a href="#beta" className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-navy text-white font-semibold hover:bg-navy-700 transition-colors shadow-soft hover:-translate-y-0.5 transition-transform">
-              <Plane className="w-4 h-4 text-teal-500" /> I&apos;m a Traveler
+              {/* A string literal, not JSX text: a leading space before an entity
+                  was trimmed on the server only, breaking hydration. gap-2 spaces it. */}
+              <Plane className="w-4 h-4 text-teal-500" />
+              {"I'm a Traveler"}
             </a>
             <a href="#beta" className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white text-navy font-semibold border border-line hover:border-navy/25 transition-colors">
               <Package className="w-4 h-4 text-teal" /> I want to Send
