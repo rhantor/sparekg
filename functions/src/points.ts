@@ -1,5 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 /**
  * The points ledger (blueprint §5).
@@ -25,9 +26,9 @@ import * as admin from 'firebase-admin';
 
 // Lazily resolved: this module is imported before index.ts calls
 // admin.initializeApp(), so touching admin.firestore() at module scope would
-// throw "the default Firebase app does not exist".
+// throw "the default Firebase app does not exist". FieldValue needs no app, so
+// it comes straight from the modular entry point (see the note in index.ts).
 const db = () => admin.firestore();
-const FieldValue = () => admin.firestore.FieldValue;
 
 export type PointsCategory =
   | 'SIGNUP' | 'MONTHLY' | 'REFERRAL' | 'TRIP_REWARD'
@@ -335,7 +336,7 @@ export function commitEntry(tx: admin.firestore.Transaction, prepared: PreparedE
     refundOf: write.refundOf ?? null,
     promoPortion: prepared.promoPortion,
     description: write.description,
-    createdAt: FieldValue().serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
     createdBy: write.createdBy,
     adminId: write.adminId ?? null,
   });
@@ -398,7 +399,34 @@ export const entryIds = {
    */
   feature: (flightId: string, seq: number) => `feature_${flightId}_${seq}`,
   urgency: (bidId: string, seq: number) => `urgency_${bidId}_${seq}`,
+  /** One reward per side of a settled delivery. Transactions share their bid's id. */
+  tripRewardTraveler: (transactionId: string) => `trip_${transactionId}_traveler`,
+  tripRewardSender: (transactionId: string) => `trip_${transactionId}_sender`,
 };
+
+// ---------------------------------------------------------------------------
+// Fee schedule
+// ---------------------------------------------------------------------------
+
+/**
+ * The platform's cut of an agreed price, recorded on every transaction.
+ *
+ * Defaults to 0 because v1 settles directly between the parties: the sender
+ * pays the traveler the agreed price at handover and the platform collects
+ * nothing. Recording the figure now keeps the schema ready for when a payment
+ * provider does collect it (`app_config/main.feeSchedule.platformFeePercent`).
+ */
+export async function getPlatformFeePercent(): Promise<number> {
+  try {
+    const snap = await db().collection('app_config').doc('main').get();
+    const value = snap.exists ? snap.data()?.feeSchedule?.platformFeePercent : undefined;
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 30
+      ? value
+      : 0;
+  } catch {
+    return 0;
+  }
+}
 
 /** Current UTC year-month, the period key for the monthly free grant. */
 export function currentPeriod(now = new Date()): string {

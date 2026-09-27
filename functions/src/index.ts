@@ -5,11 +5,19 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
+// Modular imports for the Firestore value types: the namespaced
+// `admin.firestore.FieldValue` is undefined under the emulator's firebase-admin
+// proxy with SDK v13, and the modular form is what the SDK now recommends.
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { randomInt } from 'node:crypto';
 
 import {
   canTransitionBid,
   canTransitionFlight,
   acceptsNewBids,
+  AGREEMENT_STATUSES,
+  OPEN_AGREEMENT_STATUSES,
+  type Actor,
   type BidStatus,
   type FlightStatus,
 } from './state-machines';
@@ -17,6 +25,13 @@ import {
   validatePostFlight,
   validateSubmitBid,
   validateBidId,
+  validateFlightId,
+  validateConfirmHandover,
+  validateMarkDelivered,
+  validateSubmitRating,
+  validateOpenDispute,
+  validateResolveDispute,
+  type DisputeOutcome,
   validateFeatureFlight,
   validateBoostBid,
   validateUpdateAppConfig,
@@ -36,15 +51,21 @@ import {
   entryIds,
   currentPeriod,
   periodStart,
+  getPlatformFeePercent,
 } from './points';
 
 admin.initializeApp();
 
 const db = admin.firestore();
-const { FieldValue } = admin.firestore;
 
 /** How long a sender's bid stays open for the traveler to answer. */
 const BID_WINDOW_HOURS = 48;
+
+/** Either party may dispute until this long after delivery (blueprint §5.5). */
+const DISPUTE_WINDOW_HOURS = 72;
+
+/** Wrong delivery codes a traveler may enter before the delivery needs staff. */
+const MAX_CODE_ATTEMPTS = 5;
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -566,8 +587,8 @@ export const postFlight = onCall(async (request) => {
     originAirport: input.originAirport,
     destinationAirport: input.destinationAirport,
     routeKey: input.routeKey,
-    departureAt: admin.firestore.Timestamp.fromDate(input.departureAt),
-    arrivalAt: admin.firestore.Timestamp.fromDate(input.arrivalAt),
+    departureAt: Timestamp.fromDate(input.departureAt),
+    arrivalAt: Timestamp.fromDate(input.arrivalAt),
     airline: input.airline,
     flightNumber: input.flightNumber,
     totalKgAvailable: input.totalKgAvailable,
@@ -659,6 +680,24 @@ export const submitBid = onCall(async (request) => {
       );
     }
 
+    // One open offer per sender per flight. Besides being what a traveler
+    // expects to see, it keeps every bulk refund (cancel, expiry, ticket
+    // rejection) at one ledger entry per sender, which prepareEntry requires.
+    // Read inside the transaction so a double-click cannot slip two past it.
+    const existing = await tx.get(
+      db.collection('bids')
+        .where('flightId', '==', input.flightId)
+        .where('senderId', '==', caller.uid)
+        .where('status', '==', 'PENDING' satisfies BidStatus)
+        .limit(1),
+    );
+    if (!existing.empty) {
+      throw new HttpsError(
+        'already-exists',
+        'You already have an offer waiting on this flight. Withdraw it first to change it.',
+      );
+    }
+
     // Price is the traveler's, not the bidder's. An offer below the asking rate
     // is rejected rather than silently accepted.
     let offeredTotal: number;
@@ -730,7 +769,7 @@ export const submitBid = onCall(async (request) => {
       pointsHeldPromo: hold?.promoPortion ?? 0,
       status: 'PENDING' satisfies BidStatus,
       agreedAt: null,
-      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+      expiresAt: Timestamp.fromDate(expiresAt),
       transactionId: null,
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -840,7 +879,7 @@ export const featureFlight = onCall(async (request) => {
 
     tx.update(flightRef, {
       isFeatured: true,
-      featuredUntil: admin.firestore.Timestamp.fromDate(featuredUntil),
+      featuredUntil: Timestamp.fromDate(featuredUntil),
       featurePurchaseCount: seq + 1,
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -944,7 +983,7 @@ export const boostBid = onCall(async (request) => {
 
     tx.update(bidRef, {
       urgencyLevel: input.level,
-      urgencyExpiresAt: admin.firestore.Timestamp.fromDate(urgencyExpiresAt),
+      urgencyExpiresAt: Timestamp.fromDate(urgencyExpiresAt),
       urgencyPurchaseCount: seq + 1,
     });
 
@@ -979,6 +1018,13 @@ export const acceptBid = onCall(async (request) => {
   const bidId = validateBidId(request.data);
 
   const bidRef = db.collection('bids').doc(bidId);
+  // A transaction shares its bid's id: one bid yields at most one deal, and a
+  // retried accept lands on the same document instead of a second one.
+  const txRef = db.collection('transactions').doc(bidId);
+  const codeRef = db.collection('delivery_codes').doc(bidId);
+
+  // Config is not part of the atomic unit; reading it inside would only add contention.
+  const feePercent = await getPlatformFeePercent();
 
   const result = await db.runTransaction(async (tx) => {
     const bidSnap = await tx.get(bidRef);
@@ -1026,6 +1072,25 @@ export const acceptBid = onCall(async (request) => {
       );
     }
 
+    // Contact details are exchanged the moment a deal is struck (blueprint §5.4),
+    // so both parties must be reachable before one exists. submitBid already
+    // demands the sender's phone; the traveler's is checked here.
+    const [travelerSnap, senderSnap] = await Promise.all([
+      tx.get(db.collection('users').doc(caller.uid)),
+      tx.get(db.collection('users').doc(bid.senderId as string)),
+    ]);
+    const travelerUser = travelerSnap.data() ?? {};
+    const senderUser = senderSnap.data() ?? {};
+    if (travelerUser.suspended === true) {
+      throw new HttpsError('permission-denied', 'Your account is suspended.');
+    }
+    if (!travelerUser.phone) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Add a phone number to your profile first — the sender needs a way to reach you.',
+      );
+    }
+
     const kgRemaining = Math.round((flight.kgRemaining - bid.kgRequested) * 100) / 100;
 
     // Capture: the hold taken at bid time becomes final. The points already left
@@ -1051,6 +1116,7 @@ export const acceptBid = onCall(async (request) => {
     tx.update(bidRef, {
       status: 'AGREED' satisfies BidStatus,
       agreedAt: FieldValue.serverTimestamp(),
+      transactionId: bidId,
     });
 
     if (capture) commitEntry(tx, capture);
@@ -1062,7 +1128,81 @@ export const acceptBid = onCall(async (request) => {
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    return { flightId: bid.flightId as string, kgRemaining };
+    const totalPrice: number = bid.offeredTotal;
+    const platformFee = Math.round(totalPrice * feePercent) / 100;
+    tx.set(txRef, {
+      transactionId: bidId,
+      bidId,
+      flightId: bid.flightId,
+      travelerId: caller.uid,
+      senderId: bid.senderId,
+      // Mirrors the bid's status from here on, so either party's list of deals
+      // can be read without joining back to bids.
+      status: 'AGREED' satisfies BidStatus,
+      // Snapshot of the trip, so the deal still reads correctly if the listing
+      // is later edited or closed.
+      flight: {
+        originAirport: flight.originAirport,
+        destinationAirport: flight.destinationAirport,
+        airline: flight.airline ?? '',
+        flightNumber: flight.flightNumber ?? '',
+        departureAt: flight.departureAt,
+        arrivalAt: flight.arrivalAt ?? null,
+      },
+      item: {
+        description: bid.itemDescription ?? '',
+        category: bid.itemCategory ?? '',
+        declaredValue: bid.declaredValue ?? 0,
+        specialHandling: bid.specialHandling ?? null,
+      },
+      kg: bid.kgRequested,
+      totalPrice,
+      currency: bid.currency ?? flight.currency ?? 'MYR',
+      platformFee,
+      payoutToTraveler: Math.round((totalPrice - platformFee) * 100) / 100,
+      // v1 settles directly between the parties: this records the state of that
+      // settlement, it does not mean the platform is holding money.
+      payoutStatus: 'PENDING',
+      // Revealed only now that a deal exists; the transaction is readable by
+      // its two parties alone (firestore.rules).
+      parties: {
+        traveler: {
+          displayName: travelerUser.displayName || 'Traveler',
+          phone: travelerUser.phone,
+        },
+        sender: {
+          displayName: senderUser.displayName || bid.sender?.displayName || 'Sender',
+          phone: senderUser.phone ?? null,
+        },
+      },
+      handoffConfirmedAt: null,
+      handoffNote: null,
+      pickupConfirmedAt: null,
+      pickupNote: null,
+      deliveredAt: null,
+      recipientConfirmedAt: null,
+      codeAttempts: 0,
+      disputeId: null,
+      ratingBySenderOfTraveler: null,
+      reviewBySender: null,
+      ratingByTravelerOfSender: null,
+      reviewByTraveler: null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      closedAt: null,
+    });
+
+    // The sender passes this to the recipient, who hands it to the traveler on
+    // delivery. Kept out of the transaction document because the traveler can
+    // read that — a code they could look up would prove nothing.
+    tx.set(codeRef, {
+      transactionId: bidId,
+      senderId: bid.senderId,
+      code: String(randomInt(0, 1_000_000)).padStart(6, '0'),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    return { flightId: bid.flightId as string, kgRemaining, transactionId: bidId };
   });
 
   logger.info('Bid accepted', { bidId, uid: caller.uid, kgRemaining: result.kgRemaining });
@@ -1102,6 +1242,51 @@ async function prepareBidRefund(
   });
 }
 
+/**
+ * Refunds for a batch of pending bids that one transaction closes together.
+ *
+ * prepareEntry allows one entry per user per transaction — a second one would
+ * compute from the same starting balance and overwrite the first, silently
+ * losing points. submitBid now allows one pending bid per sender per flight,
+ * but bids placed before that rule could still pair up, so a repeat sender is
+ * left PENDING here: it is not closed, and expireStaleBids refunds it on its
+ * own transaction when it lapses.
+ */
+async function prepareBulkRefunds(
+  tx: admin.firestore.Transaction,
+  docs: admin.firestore.QueryDocumentSnapshot[],
+  description: string,
+) {
+  const seen = new Set<string>();
+  const refunds = [];
+  for (const bidDoc of docs) {
+    const bid = bidDoc.data();
+    const senderId = bid.senderId as string;
+    if (seen.has(senderId)) {
+      logger.warn('Second pending bid from one sender left for expiry', { bidId: bidDoc.id });
+      continue;
+    }
+    seen.add(senderId);
+    refunds.push({ ref: bidDoc.ref, entry: await prepareBidRefund(tx, bidDoc.id, bid, description) });
+  }
+  return refunds;
+}
+
+/** Bids on one flight in the given states, read inside a transaction. */
+function bidsOnFlight(
+  tx: admin.firestore.Transaction,
+  flightId: string,
+  statuses: BidStatus[],
+  max: number,
+) {
+  return tx.get(
+    db.collection('bids')
+      .where('flightId', '==', flightId)
+      .where('status', 'in', statuses)
+      .limit(max),
+  );
+}
+
 /** Declines a bid: PENDING -> DECLINED. The sender's hold is returned. */
 export const declineBid = onCall(async (request) => {
   const caller = requireAuth(request);
@@ -1136,7 +1321,7 @@ export const declineBid = onCall(async (request) => {
  * This is the SYSTEM actor in the bid state machine.
  */
 export const expireStaleBids = onSchedule('every 60 minutes', async () => {
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const stale = await db
     .collection('bids')
     .where('status', '==', 'PENDING')
@@ -1194,20 +1379,20 @@ export const expireStaleBids = onSchedule('every 60 minutes', async () => {
  * flight that can never be accepted.
  */
 export const expireFlights = onSchedule('every 60 minutes', async () => {
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
 
-  // LOCKED is deliberately excluded (see FLIGHT_TRANSITIONS): its capacity is
-  // committed to AGREED bids, which are a delivery in progress, not a lapse.
+  // LOCKED is included: its capacity is committed to agreements, so at
+  // departure it becomes a trip in progress (IN_TRANSIT), never EXPIRED.
   const departed = await db
     .collection('flights')
-    .where('status', 'in', ['LIVE', 'DRAFT'] satisfies FlightStatus[])
+    .where('status', 'in', ['LIVE', 'DRAFT', 'LOCKED'] satisfies FlightStatus[])
     .where('departureAt', '<=', now)
     .limit(200)
     .get();
 
   if (departed.empty) return;
 
-  let expired = 0;
+  const outcomes: Record<string, number> = { EXPIRED: 0, IN_TRANSIT: 0, COMPLETED: 0 };
   let bidsExpired = 0;
   let failed = 0;
 
@@ -1222,35 +1407,41 @@ export const expireFlights = onSchedule('every 60 minutes', async () => {
         const snap = await tx.get(doc.ref);
         if (!snap.exists) return;
         const flight = snap.data()!;
+        const from = flight.status as FlightStatus;
 
-        // Re-checked inside the transaction: the traveler may have cancelled or
-        // departed the listing since the query above.
-        const check = canTransitionFlight(flight.status as FlightStatus, 'EXPIRED', 'SYSTEM');
-        if (!check.allowed) return;
+        // Re-checked inside the transaction: the traveler may have cancelled the
+        // listing since the query above.
+        if (!['LIVE', 'DRAFT', 'LOCKED'].includes(from)) return;
         if (flight.departureAt.toDate() > new Date()) return;
 
-        const pending = await tx.get(
-          db.collection('bids')
-            .where('flightId', '==', doc.id)
-            .where('status', '==', 'PENDING' satisfies BidStatus)
-            .limit(50),
-        );
+        const [pending, agreements, open] = await Promise.all([
+          bidsOnFlight(tx, doc.id, ['PENDING'], 50),
+          bidsOnFlight(tx, doc.id, AGREEMENT_STATUSES, 1),
+          bidsOnFlight(tx, doc.id, OPEN_AGREEMENT_STATUSES, 1),
+        ]);
 
-        const refunds = [];
-        for (const bidDoc of pending.docs) {
-          refunds.push({
-            ref: bidDoc.ref,
-            entry: await prepareBidRefund(
-              tx,
-              bidDoc.id,
-              bidDoc.data(),
-              'Flight departed — hold returned',
-            ),
-          });
+        // A listing nobody agreed to simply lapsed. One with agreements is a
+        // trip that flew: expiring it would strand real parcels in a terminal
+        // state. If every delivery already landed, it is done outright.
+        const to: FlightStatus = agreements.empty
+          ? 'EXPIRED'
+          : open.empty ? 'COMPLETED' : 'IN_TRANSIT';
+
+        const path: FlightStatus[] = to === 'COMPLETED' ? ['IN_TRANSIT', 'COMPLETED'] : [to];
+        let at = from;
+        for (const step of path) {
+          const check = canTransitionFlight(at, step, 'SYSTEM');
+          if (!check.allowed) {
+            logger.warn('Departed flight not moved', { flightId: doc.id, from, to, reason: check.reason });
+            return;
+          }
+          at = step;
         }
 
+        const refunds = await prepareBulkRefunds(tx, pending.docs, 'Flight departed — hold returned');
+
         tx.update(doc.ref, {
-          status: 'EXPIRED' satisfies FlightStatus,
+          status: to,
           updatedAt: FieldValue.serverTimestamp(),
         });
 
@@ -1259,16 +1450,16 @@ export const expireFlights = onSchedule('every 60 minutes', async () => {
           if (refund.entry) commitEntry(tx, refund.entry);
           bidsExpired++;
         }
-        expired++;
+        outcomes[to]++;
       });
     } catch (error) {
       failed++;
-      logger.error('Failed to expire flight', { flightId: doc.id, error });
+      logger.error('Failed to close departed flight', { flightId: doc.id, error });
     }
   }
 
-  logger.info('Expired departed flights', {
-    scanned: departed.size, expired, bidsExpired, failed,
+  logger.info('Closed departed flights', {
+    scanned: departed.size, ...outcomes, bidsExpired, failed,
   });
 });
 
@@ -1378,7 +1569,7 @@ export const lookupFlight = onCall({ secrets: [AERODATABOX_KEY] }, async (reques
 
   const cacheRef = db.collection('flight_lookups').doc(`${input.flightNumber}_${input.date}`);
   const cached = await cacheRef.get();
-  const fetchedAt = cached.data()?.fetchedAt as admin.firestore.Timestamp | undefined;
+  const fetchedAt = cached.data()?.fetchedAt as Timestamp | undefined;
   if (cached.exists && fetchedAt && Date.now() - fetchedAt.toMillis() < LOOKUP_CACHE_MS) {
     return { flights: cached.data()!.flights as ScheduleRow[] };
   }
@@ -1490,21 +1681,13 @@ export const reviewFlightTicket = onCall(async (request) => {
     const cancel = input.decision === 'REJECT'
       && canTransitionFlight(fromStatus, 'CANCELLED', 'ADMIN').allowed;
 
-    const refunds = [];
-    if (cancel) {
-      const pending = await tx.get(
-        db.collection('bids')
-          .where('flightId', '==', input.flightId)
-          .where('status', '==', 'PENDING' satisfies BidStatus)
-          .limit(200),
-      );
-      for (const bidDoc of pending.docs) {
-        refunds.push({
-          ref: bidDoc.ref,
-          entry: await prepareBidRefund(tx, bidDoc.id, bidDoc.data(), 'Listing closed — hold returned'),
-        });
-      }
-    }
+    const refunds = cancel
+      ? await prepareBulkRefunds(
+          tx,
+          (await bidsOnFlight(tx, input.flightId, ['PENDING'], 200)).docs,
+          'Listing closed — hold returned',
+        )
+      : [];
 
     const ticketStatus = input.decision === 'VERIFY' ? 'VERIFIED' : 'REJECTED';
     const toStatus: FlightStatus = cancel ? 'CANCELLED' : fromStatus;
@@ -1563,7 +1746,7 @@ export const reviewFlightTicket = onCall(async (request) => {
  * listing that was never featured at all.
  */
 export const expireBoosts = onSchedule('every 60 minutes', async () => {
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
 
   const [flights, bids] = await Promise.all([
     db.collection('flights')
@@ -1666,7 +1849,7 @@ export const grantMonthlyPoints = onSchedule('every day 02:00', async () => {
   if (economy.monthlyFree <= 0) return;
 
   const period = currentPeriod();
-  const activeSince = admin.firestore.Timestamp.fromDate(periodStart());
+  const activeSince = Timestamp.fromDate(periodStart());
   let granted = 0;
   let skipped = 0;
   let failed = 0;
@@ -1695,7 +1878,7 @@ export const grantMonthlyPoints = onSchedule('every day 02:00', async () => {
       // that predate the field have never been stamped, and treating absence as
       // participation would hand the credit to every dormant account.
       const active =
-        user.lastActivityAt instanceof admin.firestore.Timestamp &&
+        user.lastActivityAt instanceof Timestamp &&
         user.lastActivityAt.toMillis() >= activeSince.toMillis();
 
       // The floor: below the price of one bid, a user cannot act at all, so
@@ -1744,4 +1927,518 @@ export const grantMonthlyPoints = onSchedule('every day 02:00', async () => {
   }
 
   logger.info('Monthly points grant complete', { period, granted, byFloor, skipped, failed });
+});
+
+// ---------------------------------------------------------------------------
+// Withdrawing and cancelling before a deal exists
+// ---------------------------------------------------------------------------
+
+/** The sender takes back a bid the traveler has not answered: PENDING -> WITHDRAWN. */
+export const withdrawBid = onCall(async (request) => {
+  const caller = requireAuth(request);
+  const bidId = validateBidId(request.data);
+  const bidRef = db.collection('bids').doc(bidId);
+
+  await db.runTransaction(async (tx) => {
+    const bidSnap = await tx.get(bidRef);
+    if (!bidSnap.exists) throw new HttpsError('not-found', 'That bid no longer exists.');
+    const bid = bidSnap.data()!;
+
+    if (bid.senderId !== caller.uid) {
+      throw new HttpsError('permission-denied', 'Only the sender can withdraw this bid.');
+    }
+    const check = canTransitionBid(bid.status as BidStatus, 'WITHDRAWN', 'SENDER');
+    if (!check.allowed) throw new HttpsError('failed-precondition', check.reason!);
+
+    const refund = await prepareBidRefund(tx, bidId, bid, 'Bid withdrawn — hold returned');
+    tx.update(bidRef, { status: 'WITHDRAWN' satisfies BidStatus, pointsHeld: 0 });
+    if (refund) commitEntry(tx, refund);
+  });
+
+  logger.info('Bid withdrawn', { bidId, uid: caller.uid });
+  return { success: true };
+});
+
+/**
+ * The traveler withdraws a listing: LIVE/DRAFT -> CANCELLED.
+ *
+ * Only while nothing has been agreed. Once a sender is counting on the trip,
+ * cancelling is a broken deal, which goes through a dispute where staff can
+ * see both sides — not a button that quietly strands someone's parcel.
+ */
+export const cancelFlight = onCall(async (request) => {
+  const caller = requireAuth(request);
+  const flightId = validateFlightId(request.data);
+  const flightRef = db.collection('flights').doc(flightId);
+
+  const bidsDeclined = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(flightRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'That flight no longer exists.');
+    const flight = snap.data()!;
+
+    const actor: Actor | null =
+      flight.travelerId === caller.uid ? 'TRAVELER' : caller.isAdmin ? 'ADMIN' : null;
+    if (!actor) throw new HttpsError('permission-denied', 'Only the traveler can cancel this flight.');
+
+    const check = canTransitionFlight(flight.status as FlightStatus, 'CANCELLED', actor);
+    if (!check.allowed) throw new HttpsError('failed-precondition', check.reason!);
+
+    const [agreements, pending] = await Promise.all([
+      bidsOnFlight(tx, flightId, AGREEMENT_STATUSES, 1),
+      bidsOnFlight(tx, flightId, ['PENDING'], 200),
+    ]);
+    if (!agreements.empty) {
+      throw new HttpsError(
+        'failed-precondition',
+        'You have accepted bids on this flight, so it cannot be cancelled here. '
+          + 'Open a dispute on the affected delivery so our team can help.',
+      );
+    }
+
+    const refunds = await prepareBulkRefunds(tx, pending.docs, 'Flight cancelled — hold returned');
+
+    tx.update(flightRef, {
+      status: 'CANCELLED' satisfies FlightStatus,
+      isFeatured: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    for (const refund of refunds) {
+      tx.update(refund.ref, { status: 'DECLINED' satisfies BidStatus, pointsHeld: 0 });
+      if (refund.entry) commitEntry(tx, refund.entry);
+    }
+    return refunds.length;
+  });
+
+  logger.info('Flight cancelled', { flightId, uid: caller.uid, bidsDeclined });
+  return { success: true, bidsDeclined };
+});
+
+// ---------------------------------------------------------------------------
+// Agreed deals: handover, delivery, disputes, ratings, settlement
+//
+// A transaction is stored under its bid's id and mirrors the bid's status, so
+// each step below moves both documents in one Firestore transaction. The bid
+// state machine stays the authority on what may happen next.
+// ---------------------------------------------------------------------------
+
+/** Which side of a deal the caller is on, or null if they are not a party to it. */
+function partyRole(deal: admin.firestore.DocumentData, uid: string): 'SENDER' | 'TRAVELER' | null {
+  if (deal.senderId === uid) return 'SENDER';
+  if (deal.travelerId === uid) return 'TRAVELER';
+  return null;
+}
+
+/** Reads a bid and its transaction together; both must exist for an agreed deal. */
+async function readDeal(tx: admin.firestore.Transaction, bidId: string) {
+  const bidRef = db.collection('bids').doc(bidId);
+  const txRef = db.collection('transactions').doc(bidId);
+  const [bidSnap, txSnap] = await Promise.all([tx.get(bidRef), tx.get(txRef)]);
+  if (!bidSnap.exists || !txSnap.exists) {
+    throw new HttpsError('not-found', 'That delivery could not be found.');
+  }
+  return { bidRef, txRef, bid: bidSnap.data()!, deal: txSnap.data()! };
+}
+
+/**
+ * Whether finishing this bid finishes its flight: the trip is under way and no
+ * other agreement on it is still open. Read-only — callers write the result.
+ */
+async function flightCompletesWith(
+  tx: admin.firestore.Transaction,
+  flightId: string,
+  bidId: string,
+): Promise<{ ref: admin.firestore.DocumentReference; completes: boolean }> {
+  const ref = db.collection('flights').doc(flightId);
+  const [flightSnap, open] = await Promise.all([
+    tx.get(ref),
+    bidsOnFlight(tx, flightId, OPEN_AGREEMENT_STATUSES, 2),
+  ]);
+  const others = open.docs.filter((d) => d.id !== bidId);
+  const status = flightSnap.data()?.status as FlightStatus | undefined;
+  // Not yet IN_TRANSIT means expireFlights has not swept it since departure; it
+  // completes the flight itself when it does, seeing no open agreements left.
+  const completes = status === 'IN_TRANSIT'
+    && others.length === 0
+    && canTransitionFlight(status, 'COMPLETED', 'SYSTEM').allowed;
+  return { ref, completes };
+}
+
+/**
+ * One side confirms the parcel changed hands. The sender says "handed over",
+ * the traveler says "received"; the second confirmation moves the deal to
+ * HANDED_OVER, which is when the traveler takes responsibility for it.
+ */
+export const confirmHandover = onCall(async (request) => {
+  const caller = requireAuth(request);
+  const input = validateConfirmHandover(request.data);
+  await requireActiveUser(caller.uid);
+
+  const result = await db.runTransaction(async (tx) => {
+    const { bidRef, txRef, bid, deal } = await readDeal(tx, input.bidId);
+    const role = partyRole(deal, caller.uid);
+    if (!role) throw new HttpsError('permission-denied', 'You are not part of this delivery.');
+
+    if (bid.status !== ('AGREED' satisfies BidStatus)) {
+      throw new HttpsError('failed-precondition', 'This delivery is already past the handover step.');
+    }
+
+    const mine = role === 'SENDER' ? 'handoffConfirmedAt' : 'pickupConfirmedAt';
+    const theirs = role === 'SENDER' ? 'pickupConfirmedAt' : 'handoffConfirmedAt';
+    // A repeat press is harmless: report where things stand without rewriting.
+    if (deal[mine]) return { status: bid.status as BidStatus };
+
+    const complete = Boolean(deal[theirs]);
+    if (complete) {
+      const check = canTransitionBid('AGREED', 'HANDED_OVER', role);
+      if (!check.allowed) throw new HttpsError('failed-precondition', check.reason!);
+    }
+    const status: BidStatus = complete ? 'HANDED_OVER' : 'AGREED';
+
+    tx.update(txRef, {
+      [mine]: FieldValue.serverTimestamp(),
+      [role === 'SENDER' ? 'handoffNote' : 'pickupNote']: input.note,
+      status,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    if (complete) tx.update(bidRef, { status });
+    return { status };
+  });
+
+  logger.info('Handover confirmed', { bidId: input.bidId, uid: caller.uid, status: result.status });
+  return result;
+});
+
+/**
+ * The traveler records delivery with the code the recipient hands them.
+ *
+ * The code proves the parcel reached the sender's recipient — only the sender
+ * can read it, and they share it with the person at the other end. Wrong
+ * guesses are counted and capped, so it cannot be brute-forced.
+ */
+export const markDelivered = onCall(async (request) => {
+  const caller = requireAuth(request);
+  const input = validateMarkDelivered(request.data);
+  await requireActiveUser(caller.uid);
+
+  const outcome = await db.runTransaction(async (tx) => {
+    const { bidRef, txRef, bid, deal } = await readDeal(tx, input.bidId);
+    if (deal.travelerId !== caller.uid) {
+      throw new HttpsError('permission-denied', 'Only the traveler can confirm this delivery.');
+    }
+
+    const check = canTransitionBid(bid.status as BidStatus, 'DELIVERED', 'TRAVELER');
+    if (!check.allowed) {
+      throw new HttpsError(
+        'failed-precondition',
+        bid.status === 'AGREED'
+          ? 'Confirm the handover with the sender before recording delivery.'
+          : check.reason!,
+      );
+    }
+
+    const attempts: number = typeof deal.codeAttempts === 'number' ? deal.codeAttempts : 0;
+    if (attempts >= MAX_CODE_ATTEMPTS) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Too many incorrect codes. Open a dispute and our team will confirm the delivery with you.',
+      );
+    }
+
+    const departure = deal.flight?.departureAt as Timestamp | undefined;
+    if (departure && departure.toDate() > new Date()) {
+      throw new HttpsError('failed-precondition', 'You can confirm delivery once your flight has departed.');
+    }
+
+    const codeSnap = await tx.get(db.collection('delivery_codes').doc(input.bidId));
+    const flight = await flightCompletesWith(tx, bid.flightId as string, input.bidId);
+
+    if (!codeSnap.exists || codeSnap.data()!.code !== input.code) {
+      // Committed, not thrown: a throw would roll back the attempt counter and
+      // make guessing free.
+      tx.update(txRef, { codeAttempts: attempts + 1, updatedAt: FieldValue.serverTimestamp() });
+      return { delivered: false as const, attemptsLeft: MAX_CODE_ATTEMPTS - attempts - 1 };
+    }
+
+    const now = FieldValue.serverTimestamp();
+    tx.update(bidRef, { status: 'DELIVERED' satisfies BidStatus });
+    tx.update(txRef, {
+      status: 'DELIVERED' satisfies BidStatus,
+      deliveredAt: now,
+      recipientConfirmedAt: now,
+      updatedAt: now,
+    });
+    if (flight.completes) {
+      tx.update(flight.ref, { status: 'COMPLETED' satisfies FlightStatus, updatedAt: now });
+    }
+    return { delivered: true as const, flightCompleted: flight.completes };
+  });
+
+  if (!outcome.delivered) {
+    throw new HttpsError(
+      'invalid-argument',
+      outcome.attemptsLeft > 0
+        ? `That code is not right. ${outcome.attemptsLeft} attempt${outcome.attemptsLeft === 1 ? '' : 's'} left.`
+        : 'That code is not right, and no attempts are left. Open a dispute and our team will help.',
+    );
+  }
+
+  logger.info('Delivery confirmed', { bidId: input.bidId, uid: caller.uid, ...outcome });
+  return { success: true, flightCompleted: outcome.flightCompleted };
+});
+
+/**
+ * Either party flags a problem. Freezes settlement until staff resolve it.
+ * Open from agreement until DISPUTE_WINDOW_HOURS after delivery.
+ */
+export const openDispute = onCall(async (request) => {
+  const caller = requireAuth(request);
+  const input = validateOpenDispute(request.data);
+  const disputeRef = db.collection('disputes').doc(input.bidId);
+
+  await db.runTransaction(async (tx) => {
+    const { bidRef, txRef, bid, deal } = await readDeal(tx, input.bidId);
+    const role = partyRole(deal, caller.uid);
+    if (!role) throw new HttpsError('permission-denied', 'You are not part of this delivery.');
+
+    const check = canTransitionBid(bid.status as BidStatus, 'DISPUTED', role);
+    if (!check.allowed) throw new HttpsError('failed-precondition', check.reason!);
+
+    if (deal.payoutStatus !== 'PENDING') {
+      throw new HttpsError('failed-precondition', 'This delivery has already been settled.');
+    }
+    const deliveredAt = deal.deliveredAt as Timestamp | null;
+    if (deliveredAt && Date.now() - deliveredAt.toMillis() > DISPUTE_WINDOW_HOURS * 3600_000) {
+      throw new HttpsError(
+        'failed-precondition',
+        `The ${DISPUTE_WINDOW_HOURS}-hour window to report a problem with this delivery has closed.`,
+      );
+    }
+
+    const existing = await tx.get(disputeRef);
+    if (existing.exists) {
+      throw new HttpsError('already-exists', 'A dispute is already open for this delivery.');
+    }
+
+    const now = FieldValue.serverTimestamp();
+    tx.set(disputeRef, {
+      disputeId: input.bidId,
+      transactionId: input.bidId,
+      bidId: input.bidId,
+      flightId: bid.flightId,
+      travelerId: deal.travelerId,
+      senderId: deal.senderId,
+      travelerName: deal.parties?.traveler?.displayName ?? 'Traveler',
+      senderName: deal.parties?.sender?.displayName ?? 'Sender',
+      openedBy: caller.uid,
+      openedByRole: role === 'SENDER' ? 'sender' : 'traveler',
+      claimText: input.reason,
+      // Where the deal stood, so staff know whether the parcel ever moved.
+      statusWhenOpened: bid.status,
+      evidenceUrls: [],
+      status: 'OPEN',
+      assignedAdminId: null,
+      adminNotes: null,
+      resolution: null,
+      createdAt: now,
+      resolvedAt: null,
+    });
+    tx.update(bidRef, { status: 'DISPUTED' satisfies BidStatus });
+    tx.update(txRef, {
+      status: 'DISPUTED' satisfies BidStatus,
+      payoutStatus: 'DISPUTED',
+      disputeId: input.bidId,
+      updatedAt: now,
+    });
+  });
+
+  logger.info('Dispute opened', { bidId: input.bidId, uid: caller.uid });
+  return { success: true, disputeId: input.bidId };
+});
+
+/** What each staff decision means for the settlement record. */
+const PAYOUT_FOR_OUTCOME: Record<DisputeOutcome, 'RELEASED' | 'REFUNDED'> = {
+  RESOLVED_FOR_TRAVELER: 'RELEASED',
+  RESOLVED_FOR_SENDER: 'REFUNDED',
+  SPLIT: 'RELEASED',
+  CLOSED_INVALID: 'RELEASED',
+};
+
+/** Staff close a dispute: DISPUTED -> RESOLVED, with a rationale both parties see. */
+export const resolveDispute = onCall(async (request) => {
+  const caller = requireAuth(request);
+  if (!caller.isAdmin) throw new HttpsError('permission-denied', 'Staff only.');
+  const input = validateResolveDispute(request.data);
+  const disputeRef = db.collection('disputes').doc(input.bidId);
+
+  const before = await db.runTransaction(async (tx) => {
+    const { bidRef, txRef, bid } = await readDeal(tx, input.bidId);
+    const disputeSnap = await tx.get(disputeRef);
+    if (!disputeSnap.exists) throw new HttpsError('not-found', 'That dispute could not be found.');
+
+    const check = canTransitionBid(bid.status as BidStatus, 'RESOLVED', 'ADMIN');
+    if (!check.allowed) throw new HttpsError('failed-precondition', check.reason!);
+
+    const flight = await flightCompletesWith(tx, bid.flightId as string, input.bidId);
+
+    const now = FieldValue.serverTimestamp();
+    tx.update(disputeRef, {
+      status: input.outcome,
+      resolution: input.outcome,
+      adminNotes: input.rationale,
+      assignedAdminId: caller.uid,
+      resolvedAt: now,
+    });
+    tx.update(bidRef, { status: 'RESOLVED' satisfies BidStatus });
+    tx.update(txRef, {
+      status: 'RESOLVED' satisfies BidStatus,
+      payoutStatus: PAYOUT_FOR_OUTCOME[input.outcome],
+      closedAt: now,
+      updatedAt: now,
+    });
+    if (flight.completes) {
+      tx.update(flight.ref, { status: 'COMPLETED' satisfies FlightStatus, updatedAt: now });
+    }
+    return { status: disputeSnap.data()!.status as string };
+  });
+
+  await writeAudit({
+    actorUid: caller.uid,
+    action: 'DISPUTE_RESOLVED',
+    targetType: 'dispute',
+    targetId: input.bidId,
+    reason: input.rationale,
+    beforeState: before,
+    afterState: { status: input.outcome },
+  });
+
+  logger.info('Dispute resolved', { bidId: input.bidId, uid: caller.uid, outcome: input.outcome });
+  return { success: true };
+});
+
+/**
+ * One rating per party per delivery, 1-5 stars, folded into the counterpart's
+ * running average in the same transaction so the two can never disagree.
+ */
+export const submitRating = onCall(async (request) => {
+  const caller = requireAuth(request);
+  const input = validateSubmitRating(request.data);
+
+  await db.runTransaction(async (tx) => {
+    const { txRef, bid, deal } = await readDeal(tx, input.bidId);
+    const role = partyRole(deal, caller.uid);
+    if (!role) throw new HttpsError('permission-denied', 'You are not part of this delivery.');
+
+    if (bid.status !== 'DELIVERED' && bid.status !== 'RESOLVED') {
+      throw new HttpsError('failed-precondition', 'You can leave a rating once the delivery is complete.');
+    }
+
+    const ratingField = role === 'SENDER' ? 'ratingBySenderOfTraveler' : 'ratingByTravelerOfSender';
+    const reviewField = role === 'SENDER' ? 'reviewBySender' : 'reviewByTraveler';
+    if (deal[ratingField] !== null && deal[ratingField] !== undefined) {
+      throw new HttpsError('already-exists', 'You have already rated this delivery.');
+    }
+
+    const counterpartRef = db.collection('users').doc(
+      (role === 'SENDER' ? deal.travelerId : deal.senderId) as string,
+    );
+    const counterpart = (await tx.get(counterpartRef)).data() ?? {};
+    const count: number = typeof counterpart.ratingCount === 'number' ? counterpart.ratingCount : 0;
+    const average: number = typeof counterpart.averageRating === 'number' ? counterpart.averageRating : 0;
+    const nextCount = count + 1;
+
+    tx.update(txRef, {
+      [ratingField]: input.stars,
+      [reviewField]: input.comment,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(counterpartRef, {
+      ratingCount: nextCount,
+      averageRating: Math.round(((average * count + input.stars) / nextCount) * 100) / 100,
+    });
+  });
+
+  logger.info('Rating submitted', { bidId: input.bidId, uid: caller.uid, stars: input.stars });
+  return { success: true };
+});
+
+/**
+ * Settles deliveries whose dispute window closed quietly: the trip counts
+ * toward both parties' records and each side earns its trip reward.
+ */
+export const settleTransactions = onSchedule('every 60 minutes', async () => {
+  const cutoff = Timestamp.fromMillis(Date.now() - DISPUTE_WINDOW_HOURS * 3600_000);
+  const due = await db
+    .collection('transactions')
+    .where('status', '==', 'DELIVERED' satisfies BidStatus)
+    .where('deliveredAt', '<=', cutoff)
+    .limit(200)
+    .get();
+
+  if (due.empty) return;
+
+  const economy = await getPointsEconomy();
+  let settled = 0;
+  let failed = 0;
+
+  for (const doc of due.docs) {
+    try {
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(doc.ref);
+        if (!snap.exists) return;
+        const deal = snap.data()!;
+        // A dispute opened since the query, or a run that already settled it.
+        if (deal.status !== 'DELIVERED' || deal.payoutStatus !== 'PENDING') return;
+
+        const travelerId = deal.travelerId as string;
+        const senderId = deal.senderId as string;
+        const [travelerReward, senderReward] = await Promise.all([
+          economy.tripRewardTraveler > 0
+            ? prepareEntry(tx, {
+                entryId: entryIds.tripRewardTraveler(doc.id),
+                userId: travelerId,
+                delta: economy.tripRewardTraveler,
+                category: 'TRIP_REWARD',
+                referenceType: 'TRANSACTION',
+                referenceId: doc.id,
+                description: 'Trip completed — reward',
+                createdBy: 'SYSTEM',
+                toPromo: true,
+              })
+            : null,
+          economy.deliveryRewardSender > 0
+            ? prepareEntry(tx, {
+                entryId: entryIds.tripRewardSender(doc.id),
+                userId: senderId,
+                delta: economy.deliveryRewardSender,
+                category: 'TRIP_REWARD',
+                referenceType: 'TRANSACTION',
+                referenceId: doc.id,
+                description: 'Delivery completed — reward',
+                createdBy: 'SYSTEM',
+                toPromo: true,
+              })
+            : null,
+        ]);
+
+        const now = FieldValue.serverTimestamp();
+        tx.update(doc.ref, { payoutStatus: 'RELEASED', closedAt: now, updatedAt: now });
+        if (travelerReward) commitEntry(tx, travelerReward);
+        if (senderReward) commitEntry(tx, senderReward);
+        // After the ledger commits, which write the same user documents: both
+        // updates apply in order within the transaction.
+        tx.update(db.collection('users').doc(travelerId), {
+          completedTripsAsTraveler: FieldValue.increment(1),
+        });
+        tx.update(db.collection('users').doc(senderId), {
+          completedTripsAsSender: FieldValue.increment(1),
+        });
+        settled++;
+      });
+    } catch (error) {
+      failed++;
+      logger.error('Failed to settle transaction', { transactionId: doc.id, error });
+    }
+  }
+
+  logger.info('Settled transactions', { scanned: due.size, settled, failed });
 });

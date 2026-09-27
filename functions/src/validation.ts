@@ -220,6 +220,100 @@ export function validateBidId(data: unknown): string {
   return str(d.bidId, 'bidId', { max: 128 });
 }
 
+export function validateFlightId(data: unknown): string {
+  const d = asRecord(data);
+  return str(d.flightId, 'flightId', { max: 128 });
+}
+
+// ---- Agreed-deal lifecycle ----------------------------------------------------
+//
+// Every one of these is keyed by bidId: a transaction is stored under its bid's
+// id, so the two can never drift apart.
+
+/** Shown to both parties, so kept short enough to read at a glance. */
+const MAX_NOTE = 280;
+
+export interface ConfirmHandoverInput {
+  bidId: string;
+  note: string | null;
+}
+
+export function validateConfirmHandover(data: unknown): ConfirmHandoverInput {
+  const d = asRecord(data);
+  return {
+    bidId: str(d.bidId, 'bidId', { max: 128 }),
+    note: optionalStr(d.note, 'note', MAX_NOTE),
+  };
+}
+
+export interface MarkDeliveredInput {
+  bidId: string;
+  code: string;
+}
+
+export function validateMarkDelivered(data: unknown): MarkDeliveredInput {
+  const d = asRecord(data);
+  const code = str(d.code, 'code', { max: 6, min: 6 });
+  if (!/^\d{6}$/.test(code)) fail('The delivery code is 6 digits.');
+  return { bidId: str(d.bidId, 'bidId', { max: 128 }), code };
+}
+
+export interface SubmitRatingInput {
+  bidId: string;
+  stars: 1 | 2 | 3 | 4 | 5;
+  comment: string | null;
+}
+
+export function validateSubmitRating(data: unknown): SubmitRatingInput {
+  const d = asRecord(data);
+  const stars = num(d.stars, 'stars', 1, 5);
+  if (!Number.isInteger(stars)) fail('"stars" must be a whole number.');
+  return {
+    bidId: str(d.bidId, 'bidId', { max: 128 }),
+    stars: stars as SubmitRatingInput['stars'],
+    comment: optionalStr(d.comment, 'comment', MAX_NOTE),
+  };
+}
+
+export interface OpenDisputeInput {
+  bidId: string;
+  reason: string;
+}
+
+export function validateOpenDispute(data: unknown): OpenDisputeInput {
+  const d = asRecord(data);
+  return {
+    bidId: str(d.bidId, 'bidId', { max: 128 }),
+    // Long enough that staff have something to act on without a follow-up.
+    reason: str(d.reason, 'reason', { min: 20, max: 1000 }),
+  };
+}
+
+export const DISPUTE_OUTCOMES = [
+  'RESOLVED_FOR_SENDER', 'RESOLVED_FOR_TRAVELER', 'SPLIT', 'CLOSED_INVALID',
+] as const;
+export type DisputeOutcome = (typeof DISPUTE_OUTCOMES)[number];
+
+export interface ResolveDisputeInput {
+  bidId: string;
+  outcome: DisputeOutcome;
+  rationale: string;
+}
+
+export function validateResolveDispute(data: unknown): ResolveDisputeInput {
+  const d = asRecord(data);
+  const outcome = str(d.outcome, 'outcome', { max: 40 });
+  if (!(DISPUTE_OUTCOMES as readonly string[]).includes(outcome)) {
+    fail(`"outcome" must be one of ${DISPUTE_OUTCOMES.join(', ')}.`);
+  }
+  return {
+    bidId: str(d.bidId, 'bidId', { max: 128 }),
+    outcome: outcome as DisputeOutcome,
+    // Blueprint §6.5.1: the rationale is shown to both parties and is mandatory.
+    rationale: str(d.rationale, 'rationale', { min: 50, max: 2000 }),
+  };
+}
+
 export interface FeatureFlightInput {
   flightId: string;
   /** Number of 24-hour blocks to buy, 1..7. */

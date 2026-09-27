@@ -45,3 +45,6 @@ next-env.d.ts
 # Throwaway Admin SDK probe + seed scripts; they run against production and
 # create only disposable data. Rebuilt per session, never shipped.
 scratchpad/
+
+# Firebase emulator logs
+*-debug.log

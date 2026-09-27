@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "dev:emulators": "node scripts/dev-emulators.mjs",
+    "test:e2e": "npm --prefix functions run build && firebase emulators:exec --only auth,firestore,functions --project demo-sparekg \"node functions/test/deal-lifecycle.e2e.cjs\""
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.12.0",

@@ -13,7 +13,7 @@ export type FlightStatus =
   | 'DRAFT' | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
 
 export type BidStatus =
-  | 'PENDING' | 'AGREED' | 'DECLINED' | 'EXPIRED'
+  | 'PENDING' | 'AGREED' | 'DECLINED' | 'EXPIRED' | 'WITHDRAWN'
   | 'HANDED_OVER' | 'DELIVERED' | 'DISPUTED' | 'RESOLVED';
 
 /** Who is attempting a transition, as resolved from the auth token — never from the payload. */
@@ -38,10 +38,12 @@ const FLIGHT_TRANSITIONS: Record<FlightStatus, Transition<FlightStatus>[]> = {
   LIVE: [
     // All listed kg consumed by AGREED bids. Only the server can observe this.
     { to: 'LOCKED', by: ['SYSTEM'] },
-    { to: 'IN_TRANSIT', by: ['TRAVELER', 'ADMIN'] },
+    // SYSTEM: departure passed with at least one agreement — see expireFlights.
+    { to: 'IN_TRANSIT', by: ['TRAVELER', 'ADMIN', 'SYSTEM'] },
     { to: 'CANCELLED', by: ['TRAVELER', 'ADMIN'] },
-    // Departure passed with the listing still open — see expireFlights. This is
-    // distinct from CANCELLED: nobody withdrew it, the window simply closed.
+    // Departure passed with the listing still open and nothing agreed — see
+    // expireFlights. Distinct from CANCELLED: nobody withdrew it, the window
+    // simply closed.
     { to: 'EXPIRED', by: ['SYSTEM'] },
   ],
   // No EXPIRED edge: LOCKED means every kg is spoken for by an AGREED bid, so a
@@ -50,7 +52,7 @@ const FLIGHT_TRANSITIONS: Record<FlightStatus, Transition<FlightStatus>[]> = {
   LOCKED: [
     // Capacity freed again (an agreement fell through) — server-observed only.
     { to: 'LIVE', by: ['SYSTEM'] },
-    { to: 'IN_TRANSIT', by: ['TRAVELER', 'ADMIN'] },
+    { to: 'IN_TRANSIT', by: ['TRAVELER', 'ADMIN', 'SYSTEM'] },
     { to: 'CANCELLED', by: ['TRAVELER', 'ADMIN'] },
   ],
   IN_TRANSIT: [
@@ -69,9 +71,13 @@ const BID_TRANSITIONS: Record<BidStatus, Transition<BidStatus>[]> = {
     { to: 'AGREED', by: ['TRAVELER'] },
     { to: 'DECLINED', by: ['TRAVELER', 'ADMIN'] },
     { to: 'EXPIRED', by: ['SYSTEM'] },
+    // The sender changed their mind before the traveler answered.
+    { to: 'WITHDRAWN', by: ['SENDER'] },
   ],
   AGREED: [
-    { to: 'HANDED_OVER', by: ['SENDER'] },
+    // Two-party handover: the sender says it was handed over, the traveler says
+    // it was received. Whichever confirmation completes the pair moves the bid.
+    { to: 'HANDED_OVER', by: ['SENDER', 'TRAVELER'] },
     { to: 'DISPUTED', by: ['TRAVELER', 'SENDER'] },
   ],
   HANDED_OVER: [
@@ -87,6 +93,7 @@ const BID_TRANSITIONS: Record<BidStatus, Transition<BidStatus>[]> = {
   ],
   DECLINED: [],
   EXPIRED: [],
+  WITHDRAWN: [],
   RESOLVED: [],
 };
 
@@ -139,7 +146,17 @@ export function acceptsNewBids(status: FlightStatus): boolean {
   return status === 'LIVE';
 }
 
-/** Bid states that still hold flight capacity, i.e. count against kgRemaining. */
+/**
+ * Bid states that came out of an agreement, i.e. count against kgRemaining. A
+ * flight with any of these is a trip with real parcels, not an empty listing.
+ */
+export const AGREEMENT_STATUSES: BidStatus[] = [
+  'AGREED', 'HANDED_OVER', 'DELIVERED', 'DISPUTED', 'RESOLVED',
+];
+
+/** Agreements still in progress — a flight cannot complete while any remain. */
+export const OPEN_AGREEMENT_STATUSES: BidStatus[] = ['AGREED', 'HANDED_OVER', 'DISPUTED'];
+
 export function holdsCapacity(status: BidStatus): boolean {
-  return status === 'AGREED' || status === 'HANDED_OVER' || status === 'DELIVERED';
+  return AGREEMENT_STATUSES.includes(status);
 }
