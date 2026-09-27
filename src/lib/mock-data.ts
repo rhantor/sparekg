@@ -1,5 +1,5 @@
 import type {
-  User, KycSubmission, Flight, Bid, Transaction, PointsLedgerEntry,
+  User, KycSubmission, Flight, Bid, PointsLedgerEntry,
   Dispute, Report, AuditLogEntry, OnboardingVideo, DashboardKpis,
   PointsEconomySnapshot, RouteConfig, AppConfig
 } from './types';
@@ -140,18 +140,6 @@ export const mockBids: Bid[] = [
     offeredTotal: 80, urgencyLevel: 0, urgencyExpiresAt: null,
     pointsHeld: 5, pointsHeldPromo: 0, status: 'AGREED', agreedAt: '2026-05-15T16:00:00Z',
     expiresAt: '2026-05-19T08:00:00Z', transactionId: 'tx1', createdAt: '2026-05-15T11:00:00Z',
-  },
-];
-
-// ---- Transactions ----
-export const mockTransactions: Transaction[] = [
-  {
-    transactionId: 'tx1', bidId: 'b2', flightId: 'f1', travelerId: 'u1', senderId: 'u5',
-    kg: 2, totalPrice: 80, platformFee: 8, payoutToTraveler: 72,
-    payoutStatus: 'ESCROWED', handoffPhotos: [], handoffConfirmedAt: null,
-    pickupConfirmedAt: null, deliveryCode: '482916', deliveredAt: null,
-    recipientConfirmedAt: null, disputeId: null, ratingByTravelerOfSender: null,
-    ratingBySenderOfTraveler: null, createdAt: '2026-05-15T16:00:00Z', closedAt: null,
   },
 ];
 

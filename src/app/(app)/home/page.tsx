@@ -7,8 +7,10 @@ import { StatusBadge } from '@/components/app/StatusBadge';
 import { WelcomeBonusDialog } from '@/components/app/WelcomeBonusDialog';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/lib/auth-context';
-import { useGetUserQuery, useMyFlightsQuery, useMyBidsQuery } from '@/lib/store/api';
+import { useGetUserQuery, useMyFlightsQuery, useMyBidsQuery, useMyDealsQuery } from '@/lib/store/api';
 import { toAppFlight, toAppBid } from '@/lib/view-models';
+import { isActiveDeal } from '@/lib/deals';
+import { DealRow } from '@/components/app/DealRow';
 
 const ACTIONS = [
   { href: '/flights/new', icon: PlusCircle, title: 'Post a flight', desc: 'List your spare luggage capacity' },
@@ -23,6 +25,8 @@ export default function HomePage() {
   const { data: profile } = useGetUserQuery(uid, { skip: !uid });
   const { data: flights, isLoading: flightsLoading } = useMyFlightsQuery(uid, { skip: !uid });
   const { data: bids } = useMyBidsQuery(uid, { skip: !uid });
+  const { data: deals } = useMyDealsQuery(uid, { skip: !uid });
+  const activeDeals = (deals ?? []).filter(isActiveDeal);
 
   // Mapped before filtering, not after: toAppFlight is what rewrites a listing
   // whose departure has passed to EXPIRED. Filtering the raw documents first
@@ -40,8 +44,10 @@ export default function HomePage() {
     {
       icon: Coins,
       label: 'Points balance',
-      value: `${profile?.pointsBalance ?? 0}`,
-      sub: `${profile?.promoBalance ?? 0} promo`,
+      // Both buckets are spendable (promo is spent first), so the headline is
+      // their sum — the same figure the header chip and bid dialogs use.
+      value: `${(profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0)}`,
+      sub: `incl. ${profile?.promoBalance ?? 0} bonus points`,
       tint: 'bg-teal/10 text-teal',
     },
     {
@@ -106,6 +112,21 @@ export default function HomePage() {
           );
         })}
       </div>
+
+      {/* deliveries needing attention — shown only when there are some */}
+      {activeDeals.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-xl font-semibold text-navy">Active deliveries</h2>
+            <Link href="/deliveries" className="text-sm font-semibold text-teal hover:text-teal-700 inline-flex items-center gap-1">
+              View all <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+          <div className="space-y-3 mb-9">
+            {activeDeals.slice(0, 3).map((d) => <DealRow key={d.transactionId} deal={d} uid={uid} />)}
+          </div>
+        </>
+      )}
 
       {/* your flights */}
       <div className="flex items-center justify-between mb-4">

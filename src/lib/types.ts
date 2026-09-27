@@ -7,9 +7,12 @@
 
 export type KycStatus = 'PENDING' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED';
 
-export type FlightStatus = 'DRAFT' | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
+export type FlightStatus =
+  | 'DRAFT' | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
 
-export type BidStatus = 'PENDING' | 'AGREED' | 'DECLINED' | 'EXPIRED' | 'HANDED_OVER' | 'DELIVERED' | 'DISPUTED' | 'RESOLVED';
+export type BidStatus =
+  | 'PENDING' | 'AGREED' | 'DECLINED' | 'EXPIRED' | 'WITHDRAWN'
+  | 'HANDED_OVER' | 'DELIVERED' | 'DISPUTED' | 'RESOLVED';
 
 /** Staff check of the ticket behind a listing. acceptBid waits for VERIFIED. */
 export type TicketStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
@@ -18,7 +21,11 @@ export type TicketStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
 export type TicketRejectionReason =
   | 'NAME_MISMATCH' | 'FLIGHT_MISMATCH' | 'UNREADABLE' | 'NOT_A_TICKET' | 'SUSPICIOUS' | 'OTHER';
 
-export type PayoutStatus = 'ESCROWED' | 'RELEASED' | 'REFUNDED' | 'DISPUTED';
+/**
+ * Settlement state of an agreed deal. v1 settles directly between the parties,
+ * so this records where settlement stands — the platform holds no money.
+ */
+export type PayoutStatus = 'PENDING' | 'RELEASED' | 'REFUNDED' | 'DISPUTED';
 
 export type DisputeStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_FOR_SENDER' | 'RESOLVED_FOR_TRAVELER' | 'SPLIT' | 'CLOSED_INVALID';
 
@@ -214,28 +221,68 @@ export interface Bid {
   createdAt: string;
 }
 
+/** A party to a deal, as revealed to the other once the bid is AGREED. */
+export interface DealParty {
+  displayName: string;
+  phone: string | null;
+}
+
+/**
+ * An agreed deal (`transactions/{bidId}`) — created by acceptBid, readable by
+ * its two parties only. Shares its bid's id and mirrors its status.
+ */
 export interface Transaction {
   transactionId: string;
   bidId: string;
   flightId: string;
   travelerId: string;
   senderId: string;
+  status: BidStatus;
+  flight: {
+    originAirport: string;
+    destinationAirport: string;
+    airline: string;
+    flightNumber: string;
+    departureAt: string;
+    arrivalAt: string | null;
+  };
+  item: {
+    description: string;
+    category: string;
+    declaredValue: number;
+    specialHandling: string | null;
+  };
   kg: number;
   totalPrice: number;
+  currency: string;
   platformFee: number;
   payoutToTraveler: number;
   payoutStatus: PayoutStatus;
-  handoffPhotos: string[];
+  parties: { traveler: DealParty; sender: DealParty };
+  /** Sender's "handed over". */
   handoffConfirmedAt: string | null;
+  handoffNote: string | null;
+  /** Traveler's "received". Both set → HANDED_OVER. */
   pickupConfirmedAt: string | null;
-  deliveryCode: string;
+  pickupNote: string | null;
   deliveredAt: string | null;
   recipientConfirmedAt: string | null;
+  codeAttempts: number;
   disputeId: string | null;
-  ratingByTravelerOfSender: number | null;
   ratingBySenderOfTraveler: number | null;
+  reviewBySender: string | null;
+  ratingByTravelerOfSender: number | null;
+  reviewByTraveler: string | null;
   createdAt: string;
+  updatedAt: string;
   closedAt: string | null;
+}
+
+/** `delivery_codes/{bidId}` — the sender's copy of the code, unreadable by the traveler. */
+export interface DeliveryCode {
+  transactionId: string;
+  senderId: string;
+  code: string;
 }
 
 export interface PointsLedgerEntry {
@@ -269,6 +316,12 @@ export interface PointsPurchase {
 export interface Dispute {
   disputeId: string;
   transactionId: string;
+  bidId?: string;
+  flightId?: string;
+  travelerId?: string;
+  senderId?: string;
+  /** The deal's status when the dispute was opened — did the parcel ever move? */
+  statusWhenOpened?: BidStatus;
   openedBy: string;
   openedByRole: 'traveler' | 'sender';
   claimText: string;

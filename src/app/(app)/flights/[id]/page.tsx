@@ -1,6 +1,7 @@
 'use client';
 import { use, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Star, Plane, Calendar, Package, Tag, Check, CheckCircle2, Users,
   AlertCircle, Loader2, ShieldAlert, Sparkles, BadgeCheck, Clock, XCircle,
@@ -15,6 +16,7 @@ import {
   useSubmitBidMutation,
   useAcceptBidMutation,
   useDeclineBidMutation,
+  useCancelFlightMutation,
   useGetUserQuery,
   useAppConfigQuery,
   useFlightTicketQuery,
@@ -25,6 +27,9 @@ import { TICKET_REJECTION_REASONS } from '@/lib/ticket-review';
 import type { TicketRejectionReason, TicketStatus } from '@/lib/types';
 
 const CATEGORY_FALLBACK = 'General';
+
+/** Bid states that came out of an agreement. Mirrors AGREEMENT_STATUSES in functions. */
+const AGREEMENT_STATUSES = new Set<string>(['AGREED', 'HANDED_OVER', 'DELIVERED', 'DISPUTED', 'RESOLVED']);
 
 export default function FlightDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -47,7 +52,10 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
   const [submitBid, { isLoading: submitting }] = useSubmitBidMutation();
   const [acceptBid, { isLoading: accepting }] = useAcceptBidMutation();
   const [declineBid, { isLoading: declining }] = useDeclineBidMutation();
+  const [cancelFlight, { isLoading: cancelling }] = useCancelFlightMutation();
   const responding = accepting || declining;
+  const router = useRouter();
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const { data: profile } = useGetUserQuery(uid, { skip: !uid });
   const balance = (profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0);
@@ -92,6 +100,7 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
   const departed = flight.status === 'EXPIRED';
   // acceptBid enforces this; the UI only mirrors it.
   const ticketVerified = raw.ticketStatus === 'VERIFIED';
+  const hasAgreement = bidsForMine.some((b) => AGREEMENT_STATUSES.has(b.status));
 
   async function placeBid() {
     setFormError(null);
@@ -114,10 +123,25 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
     setFormError(null);
     try {
       const args = { bidId, flightId: id };
-      if (action === 'accept') await acceptBid(args).unwrap();
-      else await declineBid(args).unwrap();
+      if (action === 'accept') {
+        const { transactionId } = await acceptBid(args).unwrap();
+        // Contact details and handover steps live on the delivery page.
+        router.push(`/deliveries/${transactionId}`);
+      } else {
+        await declineBid(args).unwrap();
+      }
     } catch (err) {
       setFormError((err as { message?: string })?.message ?? 'Could not update that bid.');
+    }
+  }
+
+  async function cancelListing() {
+    setFormError(null);
+    try {
+      await cancelFlight({ flightId: id }).unwrap();
+      setConfirmingCancel(false);
+    } catch (err) {
+      setFormError((err as { message?: string })?.message ?? 'Could not cancel this flight.');
     }
   }
 
@@ -265,6 +289,14 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-navy">RM {b.offeredTotal}</span>
+                      {AGREEMENT_STATUSES.has(b.status) && (
+                        <Link
+                          href={`/deliveries/${b.bidId}`}
+                          className="px-3 py-1.5 rounded-lg bg-navy text-white text-xs font-semibold hover:bg-navy-700 transition-colors"
+                        >
+                          View delivery
+                        </Link>
+                      )}
                       {b.status === 'PENDING' && (
                         <div className="flex gap-2">
                           <button
@@ -292,6 +324,41 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                 )}
               </div>
             </div>
+
+            {/* cancelFlight refuses once anything is agreed — a sender is then
+                counting on the trip, and that goes through a dispute instead. */}
+            {flight.status === 'LIVE' && !hasAgreement && (
+              confirmingCancel ? (
+                <div className="bg-white rounded-2xl border border-rose-500/20 shadow-soft p-5 mt-4">
+                  <p className="text-sm text-navy font-medium mb-1">Cancel this flight?</p>
+                  <p className="text-sm text-ash mb-4">
+                    It will be removed from search and every pending bid is declined with its points returned.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmingCancel(false)}
+                      className="flex-1 py-2.5 rounded-xl border border-line text-sm font-semibold text-ash hover:border-navy/25 transition-colors"
+                    >
+                      Keep it
+                    </button>
+                    <button
+                      onClick={cancelListing}
+                      disabled={cancelling}
+                      className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                    >
+                      {cancelling && <Loader2 className="w-4 h-4 animate-spin" />} Cancel flight
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmingCancel(true)}
+                  className="w-full mt-3 py-2.5 text-sm font-medium text-ash hover:text-rose-600 transition-colors"
+                >
+                  Cancel this flight
+                </button>
+              )
+            )}
             </>
           ) : placed ? (
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6 text-center">
@@ -350,7 +417,9 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {submitting ? 'Submitting…' : 'Submit bid'}
               </button>
-              <p className="text-xs text-ash text-center mt-2.5">Points are only held once the traveler agrees.</p>
+              <p className="text-xs text-ash text-center mt-2.5">
+                A small points fee is held with your bid and returned in full if it isn&apos;t accepted.
+              </p>
             </div>
           )}
         </div>

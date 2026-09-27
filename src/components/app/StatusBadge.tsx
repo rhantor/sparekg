@@ -14,6 +14,7 @@ const STYLES: Record<string, string> = {
   DELIVERED: 'bg-leaf/10 text-leaf',
   DECLINED: 'bg-rose-500/10 text-rose-600',
   EXPIRED: 'bg-ash/10 text-ash',
+  WITHDRAWN: 'bg-ash/10 text-ash',
   DISPUTED: 'bg-rose-500/10 text-rose-600',
   RESOLVED: 'bg-navy/[0.06] text-navy',
 };
@@ -22,7 +23,7 @@ export function StatusBadge({ status }: { status: string }) {
   const cls = STYLES[status] ?? 'bg-ash/10 text-ash';
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[0.68rem] font-semibold uppercase tracking-wide ${cls}`}>
-      {status.replace('_', ' ')}
+      {status.replaceAll('_', ' ')}
     </span>
   );
 }

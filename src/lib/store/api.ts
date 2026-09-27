@@ -13,11 +13,23 @@
 
 import { createApi } from '@reduxjs/toolkit/query/react';
 import type {
-  Bid, Flight, FlightTicket, LookupFlightResult, PointsLedgerEntry, TicketRejectionReason, User,
+  Bid, DeliveryCode, Dispute, Flight, FlightTicket, LookupFlightResult, PointsLedgerEntry,
+  TicketRejectionReason, Transaction, User,
 } from '../types';
-import { firebaseBaseQuery, NOW, type QuerySpec } from './baseQuery';
+import {
+  firebaseBaseQuery, NOW, type FirebaseQueryArgs, type FirebaseQueryError, type QuerySpec,
+} from './baseQuery';
 
 const LIST = 'LIST' as const;
+
+/** A deal step changes the deal, its bid, and both parties' lists of each. */
+const dealTags = (bidId: string) => [
+  { type: 'Deal' as const, id: bidId },
+  { type: 'Deal' as const, id: `dispute-${bidId}` },
+  { type: 'Deal' as const, id: LIST },
+  { type: 'Bid' as const, id: bidId },
+  { type: 'Bid' as const, id: LIST },
+];
 
 export interface FlightFilters {
   /** e.g. "KUL-DAC". Omit to browse every live route. */
@@ -30,7 +42,7 @@ export interface FlightFilters {
 export const marketplaceApi = createApi({
   reducerPath: 'marketplaceApi',
   baseQuery: firebaseBaseQuery,
-  tagTypes: ['Flight', 'Bid', 'User', 'AppConfig'],
+  tagTypes: ['Flight', 'Bid', 'User', 'AppConfig', 'Deal'],
   // Firestore reads are billed per document, so hold results a little longer
   // than the 60s default — browsing back and forth shouldn't re-bill.
   keepUnusedDataFor: 180,
@@ -282,9 +294,12 @@ export const marketplaceApi = createApi({
       ],
     }),
 
-    /** Accepting consumes flight capacity, so the flight must refresh as well. */
+    /**
+     * Accepting consumes flight capacity, so the flight must refresh as well —
+     * and it opens a deal, so both parties' deal lists change.
+     */
     acceptBid: builder.mutation<
-      { success: boolean; flightId: string; kgRemaining: number },
+      { success: boolean; flightId: string; kgRemaining: number; transactionId: string },
       { bidId: string; flightId: string }
     >({
       query: ({ bidId }) => ({ kind: 'callable', name: 'acceptBid', data: { bidId } }),
@@ -294,7 +309,111 @@ export const marketplaceApi = createApi({
         { type: 'Bid', id: `flight-${arg.flightId}` },
         { type: 'Flight', id: arg.flightId },
         { type: 'Flight', id: LIST },
+        { type: 'Deal', id: LIST },
       ],
+    }),
+
+    /** The sender takes back an unanswered bid; the hold is returned. */
+    withdrawBid: builder.mutation<{ success: boolean }, { bidId: string; flightId: string; uid: string }>({
+      query: ({ bidId }) => ({ kind: 'callable', name: 'withdrawBid', data: { bidId } }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Bid', id: arg.bidId },
+        { type: 'Bid', id: LIST },
+        { type: 'Bid', id: `flight-${arg.flightId}` },
+        { type: 'User', id: arg.uid },
+      ],
+    }),
+
+    /** The traveler withdraws a listing nobody has been accepted on yet. */
+    cancelFlight: builder.mutation<{ success: boolean; bidsDeclined: number }, { flightId: string }>({
+      query: (data) => ({ kind: 'callable', name: 'cancelFlight', data }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Flight', id: arg.flightId },
+        { type: 'Flight', id: LIST },
+        { type: 'Bid', id: `flight-${arg.flightId}` },
+        { type: 'Bid', id: LIST },
+      ],
+    }),
+
+    // ---- Deals (agreed bids) -----------------------------------------------
+    //
+    // A deal is `transactions/{bidId}`: it shares its bid's id and mirrors its
+    // status, so every step below refreshes the deal and the bid together.
+
+    /**
+     * Every deal the user is part of, on either side, newest first.
+     *
+     * Two queries because the rules only allow a list that pins the caller to
+     * one side — Firestore cannot prove an `OR` across travelerId/senderId.
+     */
+    myDeals: builder.query<Transaction[], string>({
+      async queryFn(uid, _api, _extra, baseQuery) {
+        const side = (field: 'travelerId' | 'senderId'): FirebaseQueryArgs => ({
+          kind: 'collection',
+          path: 'transactions',
+          spec: { where: [[field, '==', uid]], orderBy: [['createdAt', 'desc']], limit: 50 },
+        });
+        const [asTraveler, asSender] = await Promise.all([
+          baseQuery(side('travelerId')),
+          baseQuery(side('senderId')),
+        ]);
+        const error = (asTraveler.error ?? asSender.error) as FirebaseQueryError | undefined;
+        if (error) return { error };
+        const deals = [
+          ...(asTraveler.data as Transaction[]),
+          ...(asSender.data as Transaction[]),
+        ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+        return { data: deals };
+      },
+      providesTags: (result) => [
+        { type: 'Deal' as const, id: LIST },
+        ...(result ?? []).map((d) => ({ type: 'Deal' as const, id: d.transactionId })),
+      ],
+    }),
+
+    getDeal: builder.query<Transaction, string>({
+      query: (id) => ({ kind: 'doc', path: 'transactions', id }),
+      providesTags: (_r, _e, id) => [{ type: 'Deal', id }],
+    }),
+
+    /** The sender's copy of the delivery code. The rules refuse anyone else. */
+    deliveryCode: builder.query<DeliveryCode, string>({
+      query: (id) => ({ kind: 'doc', path: 'delivery_codes', id }),
+      // The code never changes; there is no reason to read it twice.
+      keepUnusedDataFor: 3600,
+    }),
+
+    confirmHandover: builder.mutation<{ status: string }, { bidId: string; note?: string }>({
+      query: (data) => ({ kind: 'callable', name: 'confirmHandover', data }),
+      invalidatesTags: (_r, _e, arg) => dealTags(arg.bidId),
+    }),
+
+    markDelivered: builder.mutation<
+      { success: boolean; flightCompleted: boolean },
+      { bidId: string; code: string }
+    >({
+      query: (data) => ({ kind: 'callable', name: 'markDelivered', data }),
+      // Also on failure: a wrong code still bumps the attempt counter shown on the page.
+      invalidatesTags: (_r, _e, arg) => [...dealTags(arg.bidId), { type: 'Flight', id: LIST }],
+    }),
+
+    /** A deal's dispute — readable by both parties so each sees staff's decision. */
+    getDispute: builder.query<Dispute, string>({
+      query: (id) => ({ kind: 'doc', path: 'disputes', id }),
+      providesTags: (_r, _e, id) => [{ type: 'Deal', id: `dispute-${id}` }],
+    }),
+
+    openDispute: builder.mutation<{ success: boolean }, { bidId: string; reason: string }>({
+      query: (data) => ({ kind: 'callable', name: 'openDispute', data }),
+      invalidatesTags: (_r, _e, arg) => dealTags(arg.bidId),
+    }),
+
+    submitRating: builder.mutation<
+      { success: boolean },
+      { bidId: string; stars: number; comment?: string }
+    >({
+      query: (data) => ({ kind: 'callable', name: 'submitRating', data }),
+      invalidatesTags: (_r, _e, arg) => [{ type: 'Deal', id: arg.bidId }],
     }),
 
     declineBid: builder.mutation<{ success: boolean }, { bidId: string; flightId: string }>({
@@ -369,6 +488,16 @@ export const {
   useSubmitBidMutation,
   useAcceptBidMutation,
   useDeclineBidMutation,
+  useWithdrawBidMutation,
+  useCancelFlightMutation,
+  useMyDealsQuery,
+  useGetDealQuery,
+  useDeliveryCodeQuery,
+  useGetDisputeQuery,
+  useConfirmHandoverMutation,
+  useMarkDeliveredMutation,
+  useOpenDisputeMutation,
+  useSubmitRatingMutation,
   useFeatureFlightMutation,
   useBoostBidMutation,
 } = marketplaceApi;

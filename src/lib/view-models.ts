@@ -15,7 +15,7 @@ export type FlightStatus =
   | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'DRAFT' | 'CANCELLED' | 'EXPIRED';
 export type BidStatus =
   | 'PENDING' | 'AGREED' | 'HANDED_OVER' | 'DELIVERED'
-  | 'DECLINED' | 'EXPIRED' | 'DISPUTED' | 'RESOLVED';
+  | 'DECLINED' | 'EXPIRED' | 'WITHDRAWN' | 'DISPUTED' | 'RESOLVED';
 export type AvatarColor = 'ocean' | 'teal' | 'navy';
 
 export interface AppFlight {
