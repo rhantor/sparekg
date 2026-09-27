@@ -1002,6 +1002,13 @@ export const acceptBid = onCall(async (request) => {
     if (!flightSnap.exists) throw new HttpsError('not-found', 'That flight no longer exists.');
     const flight = flightSnap.data()!;
 
+    // Only an open listing takes on new agreements. Cancelled, expired or
+    // departed flights are rejected here rather than relying on every path that
+    // closes a flight to have swept its pending bids first.
+    if (flight.status !== ('LIVE' satisfies FlightStatus)) {
+      throw new HttpsError('failed-precondition', 'This flight is no longer taking bids.');
+    }
+
     // A deal is only struck on a listing whose ticket staff have checked. This is
     // also what lets a ticket rejection close a listing without unwinding an
     // agreed bid — there can never be one.
