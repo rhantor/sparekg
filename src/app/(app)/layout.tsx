@@ -8,15 +8,29 @@ import { StoreProvider } from '@/lib/store/StoreProvider';
 import { useGetUserQuery } from '@/lib/store/api';
 import { colorFor } from '@/lib/view-models';
 import { Avatar } from '@/components/ui/Avatar';
-import { Plane, Home, Search, PlusCircle, Layers, User, LogOut, Coins, ShieldAlert } from 'lucide-react';
+import {
+  Plane, Home, Search, PlusCircle, Layers, PackageCheck, User, LogOut, Coins, ShieldAlert,
+} from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/home', label: 'Home', icon: Home },
   { href: '/flights', label: 'Flights', icon: Search },
   { href: '/flights/new', label: 'Post', icon: PlusCircle },
   { href: '/bids', label: 'Bids', icon: Layers },
+  { href: '/deliveries', label: 'Deliveries', icon: PackageCheck },
   { href: '/profile', label: 'Profile', icon: User },
 ];
+
+/**
+ * The one nav item for this path: the longest href it falls under, so
+ * /flights/new lights up "Post" alone rather than "Flights" as well.
+ */
+function activeHref(pathname: string): string | undefined {
+  return NAV_ITEMS
+    .map((item) => item.href)
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   // The shell is a child, not this component, so that it too can use the
@@ -46,8 +60,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const isActive = (href: string) =>
-    pathname === href || (href !== '/home' && pathname.startsWith(href));
+  const current = activeHref(pathname);
+  const isActive = (href: string) => href === current;
+  // Promo points (sign-up, monthly, rewards) are spendable too, and are spent
+  // first — the chip shows everything the user can use, as every page does.
+  const spendable = (profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0);
 
   return (
     <div className="site min-h-screen flex flex-col bg-sand">
@@ -82,7 +99,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2">
             <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal/[0.08] text-teal-700 text-sm font-semibold">
-              <Coins className="w-4 h-4" /> {profile?.pointsBalance ?? 0}
+              <Coins className="w-4 h-4" /> {spendable}
             </span>
             <Link href="/profile">
               <Avatar
@@ -130,7 +147,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           const Icon = item.icon;
           const active = isActive(item.href);
           return (
-            <Link key={item.href} href={item.href} className={`flex flex-col items-center gap-0.5 px-3 py-1 text-[0.65rem] font-medium ${active ? 'text-teal' : 'text-ash'}`}>
+            <Link key={item.href} href={item.href} className={`flex flex-col items-center gap-0.5 px-1.5 py-1 text-[0.65rem] font-medium ${active ? 'text-teal' : 'text-ash'}`}>
               <Icon className="w-5 h-5" />
               {item.label}
             </Link>

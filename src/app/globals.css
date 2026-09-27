@@ -62,17 +62,22 @@
    PUBLIC SITE BASE — premium, light & clean
    Opt-in via the `.site` class so the admin theme is untouched.
    ============================================================ */
-.site {
-  font-family: var(--font-body);
-  color: var(--color-ink);
-  background: #fff;
-  letter-spacing: -0.011em;
-}
-.site h1, .site h2, .site h3, .site .font-display {
-  font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  color: var(--color-navy);
+/* In the base layer so utilities override it. Unlayered, these rules beat every
+   Tailwind utility regardless of specificity — `bg-sand` on the app shell and
+   `text-white` on a heading over a dark panel were both silently ignored. */
+@layer base {
+  .site {
+    font-family: var(--font-body);
+    color: var(--color-ink);
+    background: #fff;
+    letter-spacing: -0.011em;
+  }
+  .site h1, .site h2, .site h3, .site .font-display {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--color-navy);
+  }
 }
 
 /* Horizontal marquee for the live-bids ticker */
