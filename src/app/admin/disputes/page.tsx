@@ -19,8 +19,9 @@ export default function DisputesPage() {
 
   const filtered = filter === 'ALL' ? disputes : disputes.filter(d => d.status === filter);
 
+  const [now] = useState(() => Date.now());
   const timeSince = (ts: string) => {
-    const hours = Math.round((Date.now() - new Date(ts).getTime()) / 3600000);
+    const hours = Math.round((now - new Date(ts).getTime()) / 3600000);
     return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
   };
 

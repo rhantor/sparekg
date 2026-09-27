@@ -54,15 +54,13 @@ function markSeen(uid: string): void {
  */
 export function WelcomeBonusDialog({ uid }: { uid: string }) {
   // Read once on mount rather than on every render: markSeen() runs while the
-  // dialog is still open, and re-reading would close it under the user.
-  const [suppressed, setSuppressed] = useState(true);
+  // dialog is still open, and re-reading would close it under the user. The
+  // caller keys this component on uid, so a different account remounts it.
+  const [suppressed] = useState(() => !uid || alreadySeen(uid));
+  // Freshness is judged against mount time, which keeps render pure.
+  const [mountedAt] = useState(() => Date.now());
   const [gaveUp, setGaveUp] = useState(false);
   const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    if (!uid) return;
-    setSuppressed(alreadySeen(uid));
-  }, [uid]);
 
   // Stop polling on any settled outcome, so a returning user with the flag set
   // never opens a repeating query at all.
@@ -84,7 +82,7 @@ export function WelcomeBonusDialog({ uid }: { uid: string }) {
 
   const credited = Date.parse(entry.createdAt);
   const fresh =
-    Number.isFinite(credited) && Date.now() - credited < FRESH_FOR_DAYS * 86_400_000;
+    Number.isFinite(credited) && mountedAt - credited < FRESH_FOR_DAYS * 86_400_000;
   if (!fresh) return null;
 
   function close() {

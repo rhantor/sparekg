@@ -32,7 +32,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { theme, toggleTheme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Remember which page the mobile sidebar was opened on, so navigating away
+  // closes it without an effect re-rendering after the route change.
+  const [sidebarOpenOn, setSidebarOpenOn] = useState<string | null>(null);
+  const isSidebarOpen = sidebarOpenOn === pathname;
+  const setIsSidebarOpen = (open: boolean) => setSidebarOpenOn(open ? pathname : null);
 
   // Being signed in is not the same as being staff. Send non-admins to the
   // consumer app rather than the login page — they are authenticated, just not
@@ -42,11 +46,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (!isAuthenticated) router.replace('/login');
     else if (!isAdmin) router.replace('/home');
   }, [loading, isAuthenticated, isAdmin, router]);
-
-  // Close sidebar on route change on mobile
-  useEffect(() => {
-    setIsSidebarOpen(false);
-  }, [pathname]);
 
   if (loading || !isAuthenticated || !isAdmin || !user) {
     return (

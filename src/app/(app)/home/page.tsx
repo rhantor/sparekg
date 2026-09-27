@@ -165,7 +165,7 @@ export default function HomePage() {
           trigger that finishes after the redirect, and email and Google sign-up
           both land on this page. The dialog decides for itself whether there is
           anything to celebrate. */}
-      {uid && <WelcomeBonusDialog uid={uid} />}
+      {uid && <WelcomeBonusDialog key={uid} uid={uid} />}
     </div>
   );
 }

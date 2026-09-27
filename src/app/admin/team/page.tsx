@@ -16,6 +16,11 @@ interface TeamMember {
   grantedBy: string | null;
 }
 
+async function fetchTeam(): Promise<TeamMember[]> {
+  const snap = await getDocs(query(collection(db, 'admin_roles'), orderBy('role', 'asc')));
+  return snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as TeamMember);
+}
+
 export default function TeamPage() {
   const { isSuperAdmin, user } = useAuth();
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -27,10 +32,8 @@ export default function TeamPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'admin_roles'), orderBy('role', 'asc')));
-      setMembers(snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as TeamMember));
+      setMembers(await fetchTeam());
     } catch {
       setError('Could not load the team list.');
     } finally {
@@ -38,9 +41,17 @@ export default function TeamPage() {
     }
   }, []);
 
+  // First load: state is set only from the settled promise. `loading` starts
+  // true for exactly this read.
   useEffect(() => {
-    if (isSuperAdmin) load();
-  }, [isSuperAdmin, load]);
+    if (!isSuperAdmin) return;
+    let live = true;
+    fetchTeam()
+      .then((team) => { if (live) setMembers(team); })
+      .catch(() => { if (live) setError('Could not load the team list.'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [isSuperAdmin]);
 
   async function setUserRole(targetEmail: string, nextRole: 'admin' | 'super_admin' | null) {
     setError(null);

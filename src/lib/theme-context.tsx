@@ -10,17 +10,33 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | null>(null);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('dark');
+const STORAGE_KEY = 'sparekg-theme';
 
-  useEffect(() => {
-    const saved = localStorage.getItem('sparekg-theme') as Theme | null;
-    if (saved) setTheme(saved);
-  }, []);
+/**
+ * The saved theme, read once when the provider mounts. Safe to differ from the
+ * server's 'dark': nothing theme-dependent is server-rendered (the admin shell
+ * shows a spinner until auth resolves on the client).
+ */
+function savedTheme(): Theme {
+  if (typeof window === 'undefined') return 'dark';
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    return saved === 'light' || saved === 'dark' ? saved : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(savedTheme);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('sparekg-theme', theme);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, theme);
+    } catch {
+      // Private mode: the theme simply isn't remembered.
+    }
   }, [theme]);
 
   const toggleTheme = useCallback(() => {

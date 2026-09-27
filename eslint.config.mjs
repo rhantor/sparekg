@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // tsc output of the Cloud Functions package — lint its src/, not the build.
+    "functions/lib/**",
+    // Throwaway Admin SDK probes (CommonJS, gitignored).
+    "scratchpad/**",
   ]),
 ]);
 

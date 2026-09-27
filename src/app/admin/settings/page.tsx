@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { mockAppConfig } from '@/lib/mock-data';
 import { useAuth } from '@/lib/auth-context';
 import { useAppConfigQuery, useUpdateAppConfigMutation } from '@/lib/store/api';
@@ -12,6 +12,9 @@ import {
 /** Fields the server actually reads. Anything else on this page is not wired yet. */
 type Economy = Record<string, number>;
 type Flags = Record<string, boolean>;
+
+/** Sentinel for "form not yet seeded" — distinct from an absent config (undefined). */
+const UNSEEDED = Symbol('unseeded');
 
 export default function SettingsPage() {
   const { isSuperAdmin } = useAuth();
@@ -29,11 +32,13 @@ export default function SettingsPage() {
 
   // Seeded from the server once it answers, then owned by the form. Keyed on the
   // fetched object so a refetch after saving does not clobber a fresh edit.
-  useEffect(() => {
-    if (isLoading) return;
+  // Adjusted during render (not in an effect) so the form never paints stale.
+  const [seededFrom, setSeededFrom] = useState<unknown>(UNSEEDED);
+  if (!isLoading && seededFrom !== stored) {
+    setSeededFrom(stored);
     setEconomy({ ...DEFAULT_POINTS_ECONOMY, ...((stored?.pointsEconomy as Economy) ?? {}) });
     setFlags({ ...DEFAULT_FEATURE_FLAGS, ...((stored?.featureFlags as Flags) ?? {}) });
-  }, [stored, isLoading]);
+  }
 
   const notFound = (error as { code?: string })?.code === 'not-found';
   const loadFailed = error && !notFound;
