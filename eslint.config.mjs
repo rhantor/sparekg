@@ -17,6 +17,11 @@ const eslintConfig = defineConfig([
     // Throwaway Admin SDK probes (CommonJS, gitignored).
     "scratchpad/**",
   ]),
+  // CommonJS scripts (the emulator e2e suite and seeders) load with require by definition.
+  {
+    files: ["**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
 ]);
 
 export default eslintConfig;

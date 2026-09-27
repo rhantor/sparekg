@@ -1,147 +1,182 @@
-'use client';
-import { useState } from 'react';
-import { mockDisputes } from '@/lib/mock-data';
-import type { Dispute, DisputeStatus } from '@/lib/types';
-import { Scale, Eye, Clock, MessageSquare, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
+import { Scale, Clock } from 'lucide-react';
+import { adminDb } from '@/lib/firebaseAdmin';
+import { requireAdminPage, formatWhen, hoursSince, toIso } from '@/lib/admin-data';
+import { ResolveDisputeForm } from './ResolveDisputeForm';
 
-const STATUS_BADGE: Record<DisputeStatus, string> = {
-  OPEN: 'badge-danger', UNDER_REVIEW: 'badge-info',
-  RESOLVED_FOR_SENDER: 'badge-success', RESOLVED_FOR_TRAVELER: 'badge-success',
-  SPLIT: 'badge-warning', CLOSED_INVALID: 'badge-neutral',
+export const dynamic = 'force-dynamic';
+
+const OUTCOME_TEXT: Record<string, { label: string; cls: string }> = {
+  OPEN: { label: 'Open', cls: 'badge-danger' },
+  RESOLVED_FOR_SENDER: { label: 'For sender', cls: 'badge-success' },
+  RESOLVED_FOR_TRAVELER: { label: 'For traveler', cls: 'badge-success' },
+  SPLIT: { label: 'Split', cls: 'badge-warning' },
+  CLOSED_INVALID: { label: 'Closed invalid', cls: 'badge-neutral' },
 };
 
-export default function DisputesPage() {
-  const [disputes, setDisputes] = useState(mockDisputes);
-  const [selected, setSelected] = useState<Dispute | null>(null);
-  const [rationale, setRationale] = useState('');
-  const [filter, setFilter] = useState<DisputeStatus | 'ALL'>('ALL');
+interface Row {
+  id: string;
+  status: string;
+  claimText: string;
+  openedByRole: string;
+  statusWhenOpened: string | null;
+  travelerName: string;
+  senderName: string;
+  travelerId: string;
+  senderId: string;
+  adminNotes: string | null;
+  createdAt: string | null;
+  resolvedAt: string | null;
+  deal: {
+    route: string;
+    kg: number;
+    totalPrice: number;
+    item: string;
+    handedOver: string | null;
+    received: string | null;
+    delivered: string | null;
+    phones: { traveler: string | null; sender: string | null };
+  } | null;
+}
 
-  const filtered = filter === 'ALL' ? disputes : disputes.filter(d => d.status === filter);
+async function load(): Promise<Row[]> {
+  const snap = await adminDb.collection('disputes').orderBy('createdAt', 'desc').limit(100).get();
+  const dealSnaps = snap.empty
+    ? []
+    : await adminDb.getAll(...snap.docs.map((d) => adminDb.collection('transactions').doc(d.id)));
+  const deals = new Map(dealSnaps.map((s) => [s.id, s.data()]));
 
-  const [now] = useState(() => Date.now());
-  const timeSince = (ts: string) => {
-    const hours = Math.round((now - new Date(ts).getTime()) / 3600000);
-    return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
-  };
+  const rows = snap.docs.map((doc): Row => {
+    const d = doc.data();
+    const t = deals.get(doc.id);
+    return {
+      id: doc.id,
+      status: d.status,
+      claimText: d.claimText ?? '',
+      openedByRole: d.openedByRole ?? '—',
+      statusWhenOpened: d.statusWhenOpened ?? null,
+      travelerName: d.travelerName ?? 'Traveler',
+      senderName: d.senderName ?? 'Sender',
+      travelerId: d.travelerId,
+      senderId: d.senderId,
+      adminNotes: d.adminNotes ?? null,
+      createdAt: toIso(d.createdAt),
+      resolvedAt: toIso(d.resolvedAt),
+      deal: t ? {
+        route: `${t.flight?.originAirport ?? '?'} → ${t.flight?.destinationAirport ?? '?'}`,
+        kg: t.kg,
+        totalPrice: t.totalPrice,
+        item: t.item?.description ?? '',
+        handedOver: toIso(t.handoffConfirmedAt),
+        received: toIso(t.pickupConfirmedAt),
+        delivered: toIso(t.deliveredAt),
+        phones: { traveler: t.parties?.traveler?.phone ?? null, sender: t.parties?.sender?.phone ?? null },
+      } : null,
+    };
+  });
+  // Open first, oldest first among them: that is the order staff should work.
+  return rows.sort((a, b) => {
+    if ((a.status === 'OPEN') !== (b.status === 'OPEN')) return a.status === 'OPEN' ? -1 : 1;
+    return a.status === 'OPEN'
+      ? Date.parse(a.createdAt ?? '') - Date.parse(b.createdAt ?? '')
+      : Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '');
+  });
+}
 
-  const resolve = (id: string, status: DisputeStatus) => {
-    if (rationale.length < 50) return;
-    setDisputes(prev => prev.map(d => d.disputeId === id ? { ...d, status, adminNotes: rationale, resolvedAt: new Date().toISOString() } : d));
-    setSelected(null);
-    setRationale('');
-  };
+export default async function DisputesPage() {
+  await requireAdminPage();
+
+  let rows: Row[] = [];
+  let failed = false;
+  try {
+    rows = await load();
+  } catch (error) {
+    console.error('[admin] disputes failed:', error);
+    failed = true;
+  }
+  const open = rows.filter((r) => r.status === 'OPEN').length;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Scale className="w-6 h-6 text-brand-400" /> Dispute Console
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">Review and resolve transaction disputes. Mandatory rationale ≥ 50 chars.</p>
-        </div>
-        <p className="text-sm text-gray-400"><span className="font-bold text-white">{disputes.filter(d => d.status === 'OPEN').length}</span> open</p>
+      <div className="mb-6">
+        <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+          <Scale className="w-6 h-6 text-brand-400" /> Disputes
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {open} open · Completion of a disputed delivery is paused until you decide. Every decision is audited.
+        </p>
       </div>
 
-      <div className="flex gap-2 mb-5">
-        {(['ALL', 'OPEN', 'UNDER_REVIEW'] as const).map(f => (
-          <button key={f} onClick={() => setFilter(f)} className={`btn text-xs ${filter === f ? 'btn-primary' : 'btn-ghost'}`}>
-            {f === 'ALL' ? 'All' : f.replace('_', ' ')}
-          </button>
-        ))}
-      </div>
+      {failed ? (
+        <div className="glass-card p-6 text-sm text-red-400">Couldn&apos;t load disputes.</div>
+      ) : rows.length === 0 ? (
+        <div className="glass-card p-10 text-center text-gray-500">No disputes have been raised.</div>
+      ) : (
+        <div className="space-y-4">
+          {rows.map((r) => {
+            const badge = OUTCOME_TEXT[r.status] ?? { label: r.status, cls: 'badge-neutral' };
+            const age = hoursSince(r.createdAt);
+            return (
+              <div key={r.id} className="glass-card p-5 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`badge ${badge.cls}`}>{badge.label}</span>
+                    <span className="text-xs text-gray-500">
+                      Raised by the {r.openedByRole} · {formatWhen(r.createdAt)}
+                    </span>
+                    {r.status === 'OPEN' && age !== null && (
+                      <span className={`text-xs flex items-center gap-1 ${age > 24 ? 'text-red-400' : 'text-gray-500'}`}>
+                        <Clock className="w-3 h-3" /> {age}h waiting
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-gray-200 whitespace-pre-wrap">{r.claimText}</p>
 
-      <div className="flex gap-6">
-        <div className={`${selected ? 'w-1/2' : 'w-full'} transition-all`}>
-          <div className="glass-card overflow-hidden">
-            <table className="data-table">
-              <thead><tr><th>Dispute</th><th>Opened By</th><th>Status</th><th>Filed</th><th>Actions</th></tr></thead>
-              <tbody>
-                {filtered.map(d => (
-                  <tr key={d.disputeId} className={selected?.disputeId === d.disputeId ? 'bg-brand-500/5' : ''}>
-                    <td>
-                      <p className="text-sm text-white font-medium">TX: {d.transactionId}</p>
-                      <p className="text-xs text-gray-500 truncate max-w-[250px]">{d.claimText}</p>
-                    </td>
-                    <td>
-                      <p className="text-sm text-white">{d.openedByRole === 'sender' ? d.senderName : d.travelerName}</p>
-                      <span className="badge badge-neutral text-[0.6rem]">{d.openedByRole}</span>
-                    </td>
-                    <td><span className={`badge ${STATUS_BADGE[d.status]}`}>{d.status}</span></td>
-                    <td className="text-xs text-gray-500"><Clock className="w-3 h-3 inline mr-1" />{timeSince(d.createdAt)}</td>
-                    <td>
-                      <button onClick={() => setSelected(d)} className="btn btn-ghost text-xs py-1 px-2"><Eye className="w-3.5 h-3.5" /> Review</button>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && <tr><td colSpan={5} className="text-center text-gray-500 py-8">No disputes.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <Party role="Sender" name={r.senderName} uid={r.senderId} phone={r.deal?.phones.sender ?? null} />
+                    <Party role="Traveler" name={r.travelerName} uid={r.travelerId} phone={r.deal?.phones.traveler ?? null} />
+                  </div>
 
-        <AnimatePresence>
-          {selected && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="w-1/2">
-              <div className="glass-card p-6 sticky top-6">
-                <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-lg font-bold text-white">Dispute #{selected.disputeId}</h2>
-                  <button onClick={() => setSelected(null)} className="btn btn-ghost text-xs py-1">Close</button>
+                  {r.deal ? (
+                    <div className="rounded-lg bg-surface-100 p-3 text-sm text-gray-300 space-y-1">
+                      <p><span className="text-gray-500">Deal:</span> {r.deal.route} · {r.deal.kg} KG · MYR {r.deal.totalPrice} · {r.deal.item}</p>
+                      <p><span className="text-gray-500">Stage when raised:</span> {r.statusWhenOpened?.replaceAll('_', ' ') ?? '—'}</p>
+                      <p>
+                        <span className="text-gray-500">Handed over:</span> {formatWhen(r.deal.handedOver)} ·{' '}
+                        <span className="text-gray-500">received:</span> {formatWhen(r.deal.received)} ·{' '}
+                        <span className="text-gray-500">delivered:</span> {formatWhen(r.deal.delivered)}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-amber-400">The deal record behind this dispute is missing.</p>
+                  )}
                 </div>
 
-                <div className="bg-surface-100 rounded-xl p-4 mb-4">
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div><span className="text-gray-500">Traveler:</span> <span className="text-white ml-1">{selected.travelerName}</span></div>
-                    <div><span className="text-gray-500">Sender:</span> <span className="text-white ml-1">{selected.senderName}</span></div>
-                    <div><span className="text-gray-500">Transaction:</span> <span className="text-white ml-1 font-mono text-xs">{selected.transactionId}</span></div>
-                    <div><span className="text-gray-500">Opened by:</span> <span className="text-white ml-1">{selected.openedByRole}</span></div>
-                  </div>
+                <div>
+                  {r.status === 'OPEN' ? (
+                    <ResolveDisputeForm bidId={r.id} />
+                  ) : (
+                    <div className="text-sm space-y-1">
+                      <p className="text-gray-500">Resolved {formatWhen(r.resolvedAt)}</p>
+                      <p className="text-gray-300 whitespace-pre-wrap">{r.adminNotes}</p>
+                    </div>
+                  )}
                 </div>
-
-                <div className="mb-4">
-                  <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5" /> Claim</p>
-                  <p className="text-sm text-gray-300 bg-surface-100 rounded-lg p-3">{selected.claimText}</p>
-                </div>
-
-                {selected.evidenceUrls.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs font-semibold text-gray-400 mb-2">Evidence ({selected.evidenceUrls.length} files)</p>
-                    <div className="flex gap-2">
-                      {selected.evidenceUrls.map((url, i) => (
-                        <div key={i} className="w-16 h-16 rounded-lg bg-surface-300 flex items-center justify-center text-[0.625rem] text-gray-500">File {i + 1}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {(selected.status === 'OPEN' || selected.status === 'UNDER_REVIEW') && (
-                  <div className="space-y-3 mt-6">
-                    <div>
-                      <label className="text-xs text-gray-400 mb-1 block">Rationale (min 50 chars) — <span className={rationale.length >= 50 ? 'text-emerald-400' : 'text-red-400'}>{rationale.length}/50</span></label>
-                      <textarea value={rationale} onChange={e => setRationale(e.target.value)} className="input min-h-[80px] resize-y" placeholder="Explain your decision..." />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => resolve(selected.disputeId, 'RESOLVED_FOR_TRAVELER')} disabled={rationale.length < 50} className="btn btn-primary text-xs py-2.5">
-                        <CheckCircle className="w-3.5 h-3.5" /> Payout to Traveler
-                      </button>
-                      <button onClick={() => resolve(selected.disputeId, 'RESOLVED_FOR_SENDER')} disabled={rationale.length < 50} className="btn btn-success text-xs py-2.5">
-                        <CheckCircle className="w-3.5 h-3.5" /> Refund Sender
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => resolve(selected.disputeId, 'SPLIT')} disabled={rationale.length < 50} className="btn btn-ghost text-xs py-2.5">Split</button>
-                      <button onClick={() => resolve(selected.disputeId, 'CLOSED_INVALID')} disabled={rationale.length < 50} className="btn btn-ghost text-xs py-2.5">
-                        <XCircle className="w-3.5 h-3.5" /> Close Invalid
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Party({ role, name, uid, phone }: { role: string; name: string; uid: string; phone: string | null }) {
+  return (
+    <div>
+      <p className="text-xs text-gray-500">{role}</p>
+      <Link href={`/admin/users/${uid}`} className="text-white font-medium hover:text-brand-400">{name}</Link>
+      <p className="text-xs text-gray-400">{phone ?? 'No phone'}</p>
     </div>
   );
 }

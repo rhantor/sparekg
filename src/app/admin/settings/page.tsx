@@ -1,11 +1,10 @@
 'use client';
 import { useState } from 'react';
-import { mockAppConfig } from '@/lib/mock-data';
 import { useAuth } from '@/lib/auth-context';
 import { useAppConfigQuery, useUpdateAppConfigMutation } from '@/lib/store/api';
 import { DEFAULT_POINTS_ECONOMY, DEFAULT_FEATURE_FLAGS } from '@/lib/economy';
 import {
-  Settings, Shield, Coins, DollarSign, Save, ToggleLeft, ToggleRight,
+  Settings, Shield, Coins, Save, ToggleLeft, ToggleRight,
   Loader2, AlertCircle, Info,
 } from 'lucide-react';
 
@@ -160,49 +159,6 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/*
-        Everything below is still mock. The server has no fee schedule and no
-        purchase packages yet — those land with the payment gateway — so these are
-        shown read-only rather than as inputs that quietly discard what is typed.
-      */}
-      <div className="glass-card p-5 mb-6 opacity-60">
-        <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
-          <DollarSign className="w-4 h-4 text-emerald-400" /> Fee Schedule
-          <span className="badge badge-neutral ml-1">Not wired yet</span>
-        </h3>
-        <p className="text-xs text-gray-500 mb-4">Arrives with the payments phase. Display only.</p>
-        <div className="grid grid-cols-2 gap-4 text-sm text-gray-300">
-          <div>
-            <span className="text-xs text-gray-500 block">Platform Fee (%)</span>
-            {mockAppConfig.feeSchedule.platformFeePercent}
-          </div>
-          <div>
-            <span className="text-xs text-gray-500 block">Cancellation Refund Window (hours)</span>
-            {mockAppConfig.feeSchedule.cancellationRefundWindowHours}
-          </div>
-        </div>
-      </div>
-
-      <div className="glass-card p-5 opacity-60">
-        <h3 className="text-sm font-semibold text-white mb-1">
-          Points Purchase Packages
-          <span className="badge badge-neutral ml-2">Not wired yet</span>
-        </h3>
-        <p className="text-xs text-gray-500 mb-4">Arrives with SSLCommerz / iPay88. Display only.</p>
-        <table className="data-table">
-          <thead><tr><th>Package</th><th>Points</th><th>Price (MYR)</th><th>Rate</th></tr></thead>
-          <tbody>
-            {mockAppConfig.pointsPricing.packages.map((pkg) => (
-              <tr key={pkg.name}>
-                <td className="text-white font-medium">{pkg.name}</td>
-                <td>{pkg.points}</td>
-                <td>MYR {pkg.priceMyr}</td>
-                <td className="text-brand-400">{(pkg.points / pkg.priceMyr).toFixed(1)} pts/MYR</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

@@ -28,9 +28,10 @@ const DEMO_PASSWORD = 'sparekg-demo-1';
 const USERS = {
   traveler: { email: 'traveler@demo.test', name: 'Rahim Traveler', phone: '+60111111111' },
   sender: { email: 'sender@demo.test', name: 'Nadia Sender', phone: '+8801711111111' },
+  staff: { email: 'staff@demo.test', name: 'Sara Staff', phone: '+60122222222', claims: { admin: true, superAdmin: true } },
 };
 
-async function ensureUser({ email, name, phone }) {
+async function ensureUser({ email, name, phone, claims = {} }) {
   let user;
   try {
     user = await admin.auth().getUserByEmail(email);
@@ -42,7 +43,7 @@ async function ensureUser({ email, name, phone }) {
     await new Promise((r) => setTimeout(r, 250));
   }
   await db.doc(`users/${user.uid}`).update({ displayName: name, phone, kycStatus: 'APPROVED' });
-  await admin.auth().setCustomUserClaims(user.uid, { kycApproved: true });
+  await admin.auth().setCustomUserClaims(user.uid, { kycApproved: true, ...claims });
   return user.uid;
 }
 
@@ -75,7 +76,8 @@ async function flight(id, travelerId, hoursFromNow, flightNumber) {
 
 (async () => {
   const travelerId = await ensureUser(USERS.traveler);
-  const senderId = await ensureUser(USERS.sender);
+  await ensureUser(USERS.sender);
+  await ensureUser(USERS.staff);
   const asTraveler = await client('traveler');
   const asSender = await client('sender');
 
@@ -100,17 +102,27 @@ async function flight(id, travelerId, hoursFromNow, flightNumber) {
   await db.doc('flights/DEMO-2').update({ departureAt: past, status: 'IN_TRANSIT' });
   await db.doc(`transactions/${inTransit}`).update({ 'flight.departureAt': past });
 
+  // 3. Disputed: the sender reports a no-show, for the admin console.
+  await flight('DEMO-3', travelerId, 60, 'OD162');
+  const disputed = await deal('DEMO-3', 4, 'Spices and dried fruit for Eid');
+  await asSender('openDispute', {
+    bidId: disputed,
+    reason: 'The traveler did not come to the agreed meeting point at KL Sentral and stopped replying.',
+  });
+
   const codes = {};
   for (const id of [agreed, inTransit]) {
     codes[id] = (await db.doc(`delivery_codes/${id}`).get()).get('code');
   }
 
-  console.log('\nSeeded the emulators (password for both: %s)', DEMO_PASSWORD);
+  console.log('\nSeeded the emulators (password for all: %s)', DEMO_PASSWORD);
   console.log('  traveler: %s', USERS.traveler.email);
   console.log('  sender:   %s', USERS.sender.email);
+  console.log('  staff:    %s  (super admin → /admin)', USERS.staff.email);
   console.log('\nDeals:');
   console.log('  AGREED       /deliveries/%s  (code %s)', agreed, codes[agreed]);
   console.log('  HANDED_OVER  /deliveries/%s  (code %s)', inTransit, codes[inTransit]);
+  console.log('  DISPUTED     /deliveries/%s  (resolve at /admin/disputes)', disputed);
   process.exit(0);
 })().catch((err) => {
   console.error(err);

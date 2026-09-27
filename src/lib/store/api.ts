@@ -408,6 +408,19 @@ export const marketplaceApi = createApi({
       invalidatesTags: (_r, _e, arg) => dealTags(arg.bidId),
     }),
 
+    /** Staff decision on a dispute. The callable refuses anyone without the admin claim. */
+    resolveDispute: builder.mutation<
+      { success: boolean },
+      {
+        bidId: string;
+        outcome: 'RESOLVED_FOR_SENDER' | 'RESOLVED_FOR_TRAVELER' | 'SPLIT' | 'CLOSED_INVALID';
+        rationale: string;
+      }
+    >({
+      query: (data) => ({ kind: 'callable', name: 'resolveDispute', data }),
+      invalidatesTags: (_r, _e, arg) => dealTags(arg.bidId),
+    }),
+
     submitRating: builder.mutation<
       { success: boolean },
       { bidId: string; stars: number; comment?: string }
@@ -497,6 +510,7 @@ export const {
   useConfirmHandoverMutation,
   useMarkDeliveredMutation,
   useOpenDisputeMutation,
+  useResolveDisputeMutation,
   useSubmitRatingMutation,
   useFeatureFlightMutation,
   useBoostBidMutation,

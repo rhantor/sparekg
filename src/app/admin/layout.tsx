@@ -3,29 +3,27 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
+import { StoreProvider } from '@/lib/store/StoreProvider';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, ShieldCheck, Users, Coins, Scale,
-  Flag, FileText, Settings, ClipboardList, Plane, LogOut, ChevronRight, Sun, Moon, Menu, X,
+  LayoutDashboard, ShieldCheck, Users, Scale,
+  Settings, ClipboardList, Plane, LogOut, ChevronRight, Sun, Moon, Menu, X,
   UsersRound, Ticket,
 } from 'lucide-react';
 
+// Economy, Reports and Content are left out until they have a real backend —
+// the console shows live data only. Queue depths are on the dashboard.
 const NAV_ITEMS = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/kyc', label: 'KYC Queue', icon: ShieldCheck, badgeKey: 'kyc' as const },
+  { href: '/admin/kyc', label: 'KYC Queue', icon: ShieldCheck },
   { href: '/admin/flights', label: 'Flight Tickets', icon: Ticket },
+  { href: '/admin/disputes', label: 'Disputes', icon: Scale },
   { href: '/admin/users', label: 'Users', icon: Users },
-  { href: '/admin/economy', label: 'Economy', icon: Coins },
-  { href: '/admin/disputes', label: 'Disputes', icon: Scale, badgeKey: 'disputes' as const },
-  { href: '/admin/reports', label: 'Reports', icon: Flag, badgeKey: 'reports' as const },
-  { href: '/admin/content', label: 'Content', icon: FileText },
   { href: '/admin/audit', label: 'Audit Log', icon: ClipboardList },
   { href: '/admin/team', label: 'Team Access', icon: UsersRound, superOnly: true },
   { href: '/admin/settings', label: 'Settings', icon: Settings, superOnly: true },
 ];
-
-const BADGE_COUNTS: Record<string, number> = { kyc: 3, disputes: 2, reports: 2 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, isAdmin, isSuperAdmin, loading, logout } = useAuth();
@@ -104,16 +102,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {filteredNav.map(item => {
             const isActive = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href));
             const Icon = item.icon;
-            const badge = item.badgeKey ? BADGE_COUNTS[item.badgeKey] : undefined;
             return (
               <Link key={item.href} href={item.href} className={`sidebar-link ${isActive ? 'active' : ''}`}>
                 <Icon className="w-[18px] h-[18px]" />
                 <span className="flex-1">{item.label}</span>
-                {badge && badge > 0 && (
-                  <span className="min-w-[20px] h-5 flex items-center justify-center rounded-full bg-brand-500/20 text-brand-400 text-[0.625rem] font-bold px-1.5">
-                    {badge}
-                  </span>
-                )}
                 {isActive && <ChevronRight className="w-3.5 h-3.5 text-brand-400" />}
               </Link>
             );
@@ -176,7 +168,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               transition={{ duration: 0.25 }}
               className="p-4 md:p-6 lg:p-8"
             >
-              {children}
+              {/* The review forms (tickets, disputes) and Settings use the RTK
+                  Query hooks, which throw without a store above them. */}
+              <StoreProvider>{children}</StoreProvider>
             </motion.div>
           </AnimatePresence>
         </main>
