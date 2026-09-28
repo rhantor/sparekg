@@ -119,6 +119,24 @@ export const marketplaceApi = createApi({
       providesTags: (_r, _e, uid) => [{ type: 'User', id: uid }],
     }),
 
+    /**
+     * The caller's points statement, newest first. Pinned to the caller and
+     * capped at 100 because the rules only allow a list that proves both.
+     */
+    myLedger: builder.query<PointsLedgerEntry[], string>({
+      query: (uid) => ({
+        kind: 'collection',
+        path: 'points_ledger',
+        spec: {
+          where: [['userId', '==', uid]],
+          orderBy: [['createdAt', 'desc']],
+          limit: 100,
+        },
+      }),
+      // Tagged with the user so every balance-changing mutation refreshes it.
+      providesTags: (_r, _e, uid) => [{ type: 'User', id: uid }],
+    }),
+
     // ---- Flights ----------------------------------------------------------
 
     listFlights: builder.query<Flight[], FlightFilters | void>({
@@ -286,11 +304,13 @@ export const marketplaceApi = createApi({
 
     submitBid: builder.mutation<{ bidId: string }, Record<string, unknown>>({
       query: (data) => ({ kind: 'callable', name: 'submitBid', data }),
-      // The flight's bidCount changed too.
+      // The flight's bidCount changed too, and the bid fee left the balance —
+      // 'User' refreshes the header chip and the points statement.
       invalidatesTags: (_r, _e, arg) => [
         { type: 'Bid', id: LIST },
         { type: 'Bid', id: `flight-${arg.flightId}` },
         { type: 'Flight', id: String(arg.flightId) },
+        'User',
       ],
     }),
 
@@ -491,6 +511,7 @@ export const {
   useLookupFlightMutation,
   useGetUserQuery,
   useSignupBonusQuery,
+  useMyLedgerQuery,
   useListFlightsQuery,
   useGetFlightQuery,
   useMyFlightsQuery,

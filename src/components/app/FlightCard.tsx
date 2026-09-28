@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { ArrowRight, Star, Plane, Users, Sparkles } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusBadge } from './StatusBadge';
-import type { AppFlight } from '@/lib/app-samples';
+import type { AppFlight } from '@/lib/view-models';
 
 export function FlightCard({ flight }: { flight: AppFlight }) {
   const pct = Math.round(((flight.kgTotal - flight.kgLeft) / flight.kgTotal) * 100);

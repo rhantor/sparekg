@@ -5,7 +5,7 @@ import { Menu, X, Plane } from 'lucide-react';
 
 const LINKS = [
   { href: '#how', label: 'How It Works' },
-  { href: '#feeds', label: 'Find Trips' },
+  { href: '#feeds', label: 'Open Flights' },
   { href: '#about', label: 'About' },
 ];
 

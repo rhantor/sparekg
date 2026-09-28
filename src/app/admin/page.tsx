@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, Clock, PackageCheck, Ban,
 } from 'lucide-react';
 import { adminDb } from '@/lib/firebaseAdmin';
-import { requireAdminPage, safely, toIso, hoursSince } from '@/lib/admin-data';
+import { requireAdminPage, safely, toIso, hoursSince, formatWhen } from '@/lib/admin-data';
 import { cityFor } from '@/lib/airports';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +43,42 @@ async function liveRoutes(): Promise<RouteRow[]> {
         : null,
     }))
     .sort((a, b) => b.flights - a.flights);
+}
+
+interface BetaRow {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  route: string | null;
+  travelDate: string | null;
+  createdAt: string | null;
+}
+
+/** Landing-page early-access sign-ups, newest first, for staff to follow up. */
+async function latestBetaSignups(): Promise<{ total: number; rows: BetaRow[] }> {
+  const col = adminDb.collection('beta_signups');
+  const [total, snap] = await Promise.all([
+    count(col),
+    col.orderBy('createdAt', 'desc').limit(10).get(),
+  ]);
+  return {
+    total,
+    rows: snap.docs.map((d) => {
+      const b = d.data();
+      return {
+        id: d.id,
+        name: b.name ?? '—',
+        email: b.email ?? '—',
+        phone: b.phone ?? null,
+        role: b.role ?? '—',
+        route: b.route ?? null,
+        travelDate: b.travelDate ?? null,
+        createdAt: toIso(b.createdAt),
+      };
+    }),
+  };
 }
 
 /** Depth plus the age of the oldest item — the number an SLA is judged on. */
@@ -91,6 +127,7 @@ export default async function AdminDashboard() {
         .then((s) => s.data().total ?? 0)),
     safely('routes', liveRoutes),
   ]);
+  const beta = await safely('beta sign-ups', latestBetaSignups);
 
   const matchRate = bidsTotal && bidsAgreed !== null ? bidsAgreed / bidsTotal : null;
   // The ledger is the source of truth; balances are a cache of it. Any gap
@@ -152,6 +189,40 @@ export default async function AdminDashboard() {
             </p>
           )}
         </div>
+      </div>
+
+      <div className="glass-card p-5 mb-8">
+        <h3 className="text-sm font-semibold text-white mb-4">
+          Beta sign-ups {beta && <span className="text-gray-500 font-normal">({beta.total} total, newest 10)</span>}
+        </h3>
+        {beta === null ? (
+          <p className="text-sm text-gray-500">Couldn&apos;t load sign-ups.</p>
+        ) : beta.rows.length === 0 ? (
+          <p className="text-sm text-gray-500">No one has signed up on the landing page yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr><th>Name</th><th>Contact</th><th>Role</th><th>Route</th><th>Travel date</th><th>Signed up</th></tr>
+              </thead>
+              <tbody>
+                {beta.rows.map((b) => (
+                  <tr key={b.id}>
+                    <td className="font-medium text-white">{b.name}</td>
+                    <td>
+                      <a href={`mailto:${b.email}`} className="text-brand-400 hover:underline">{b.email}</a>
+                      {b.phone && <span className="block text-xs text-gray-500">{b.phone}</span>}
+                    </td>
+                    <td>{b.role}</td>
+                    <td>{b.route ?? '—'}</td>
+                    <td>{b.travelDate ?? '—'}</td>
+                    <td className="text-xs text-gray-500">{formatWhen(b.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="glass-card p-5">

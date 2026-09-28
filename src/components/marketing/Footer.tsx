@@ -1,37 +1,35 @@
 import Link from 'next/link';
-import { Plane, Globe, AtSign, MessageCircle, Mail } from 'lucide-react';
+import { Plane } from 'lucide-react';
 
+// Only links that lead somewhere. Blog, careers, press and social profiles
+// return when they exist; a link to "#" reads as a broken site.
 const COLS = [
   {
     title: 'Platform',
     links: [
-      { label: 'How It Works', href: '#how' },
-      { label: 'Find Travelers', href: '#feeds' },
-      { label: 'Find Senders', href: '#feeds' },
-      { label: 'Join Beta', href: '#beta' },
+      { label: 'How It Works', href: '/#how' },
+      { label: 'Open Flights', href: '/#feeds' },
+      { label: 'Post a Flight', href: '/flights/new' },
+      { label: 'Create Account', href: '/signup' },
     ],
   },
   {
     title: 'Company',
     links: [
-      { label: 'About SpareKG', href: '#about' },
-      { label: 'Blog', href: '#' },
-      { label: 'Careers', href: '#' },
-      { label: 'Press Kit', href: '#' },
+      { label: 'About SpareKG', href: '/#about' },
+      { label: 'Trust & Safety', href: '/#trust' },
+      { label: 'Join the Beta', href: '/#beta' },
     ],
   },
   {
-    title: 'Legal & Support',
+    title: 'Legal',
     links: [
-      { label: 'Privacy Policy', href: '#' },
-      { label: 'Terms & Conditions', href: '#' },
-      { label: 'Safety Guidelines', href: '#trust' },
-      { label: 'hello@sparekg.com', href: 'mailto:hello@sparekg.com' },
+      { label: 'Terms of Service', href: '/terms' },
+      { label: 'Privacy Policy', href: '/privacy' },
+      { label: 'Prohibited Items', href: '/prohibited-items' },
     ],
   },
 ];
-
-const SOCIALS = [Globe, AtSign, MessageCircle, Mail];
 
 export function Footer() {
   return (
@@ -48,33 +46,22 @@ export function Footer() {
             Connecting travelers with unused luggage space to people who need to send items
             internationally.
           </p>
-          <div className="flex gap-2.5 mt-5">
-            {SOCIALS.map((Icon, i) => (
-              <a
-                key={i}
-                href="#"
-                className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <Icon className="w-4 h-4" />
-              </a>
-            ))}
-          </div>
         </div>
 
         {COLS.map((col) => (
           <div key={col.title}>
             <h4 className="text-sm font-semibold text-white mb-4">{col.title}</h4>
             {col.links.map((l) => (
-              <a key={l.label} href={l.href} className="block text-sm text-white/55 hover:text-white mb-2.5 transition-colors">
+              <Link key={l.label} href={l.href} className="block text-sm text-white/55 hover:text-white mb-2.5 transition-colors">
                 {l.label}
-              </a>
+              </Link>
             ))}
           </div>
         ))}
       </div>
 
       <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2 pt-6 text-[0.8rem] text-white/50">
-        <span>© 2025 SpareKG. All rights reserved · www.sparekg.com</span>
+        <span>© {new Date().getFullYear()} SpareKG. All rights reserved.</span>
         <span>Made with care for the community</span>
       </div>
     </footer>

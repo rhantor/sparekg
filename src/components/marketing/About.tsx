@@ -2,11 +2,14 @@ import { Plane, Globe, ArrowRight } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Reveal } from '@/components/ui/Reveal';
 
+// How the platform works, not traction figures: during the soft launch there
+// are no usage numbers worth quoting, and invented ones would not survive a
+// visitor's first question.
 const STATS = [
-  { num: '500+', label: 'Travelers monthly' },
-  { num: '30%+', label: 'Luggage wasted' },
-  { num: 'RM80+', label: 'Avg courier / 5kg' },
-  { num: 'RM25', label: 'Avg SpareKG / 5kg' },
+  { num: '100%', label: 'Travelers ID-verified' },
+  { num: 'Ticket', label: 'Checked by our team' },
+  { num: '6-digit', label: 'Code confirms delivery' },
+  { num: '72h', label: 'To report a problem' },
 ];
 
 export function About() {

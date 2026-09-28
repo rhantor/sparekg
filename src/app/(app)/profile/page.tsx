@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import {
   Star, ShieldCheck, ShieldAlert, Clock, Coins, Plane, Package, ChevronRight,
-  Wallet, Settings, IdCard, LogOut, Pencil,
+  Wallet, PackageCheck, IdCard, LogOut, Pencil,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
@@ -77,8 +77,8 @@ export default function ProfilePage() {
         ? <span className="inline-block h-3 w-20 rounded bg-line/70 animate-pulse" />
         : kycPresentation.label,
     },
-    { href: '/bids', icon: Wallet, label: 'Points & wallet', note: profileLoading ? '' : `${points} pts` },
-    { href: '/home', icon: Settings, label: 'Account settings', note: '' },
+    { href: '/points', icon: Wallet, label: 'Points & history', note: profileLoading ? '' : `${points} pts` },
+    { href: '/deliveries', icon: PackageCheck, label: 'Your deliveries', note: '' },
   ];
 
   return (

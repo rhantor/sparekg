@@ -98,9 +98,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="flex items-center gap-2">
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal/[0.08] text-teal-700 text-sm font-semibold">
+            <Link
+              href="/points"
+              aria-label={`${spendable} points — view history`}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal/[0.08] text-teal-700 text-sm font-semibold hover:bg-teal/[0.14] transition-colors"
+            >
               <Coins className="w-4 h-4" /> {spendable}
-            </span>
+            </Link>
             <Link href="/profile">
               <Avatar
                 name={profile?.displayName || user.displayName}
