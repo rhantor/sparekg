@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { Menu, X, Plane } from 'lucide-react';
 
 const LINKS = [
-  { href: '#how', label: 'How It Works' },
-  { href: '#feeds', label: 'Open Flights' },
-  { href: '#about', label: 'About' },
+  { href: '/#how', label: 'How It Works' },
+  { href: '/#feeds', label: 'Open Flights' },
+  { href: '/#about', label: 'About' },
 ];
 
 export function Nav() {
@@ -36,16 +36,16 @@ export function Nav() {
 
         <div className="hidden md:flex items-center gap-8">
           {LINKS.map((l) => (
-            <a key={l.href} href={l.href} className="text-sm font-medium text-ash hover:text-navy transition-colors">
+            <Link key={l.href} href={l.href} className="text-sm font-medium text-ash hover:text-navy transition-colors">
               {l.label}
-            </a>
+            </Link>
           ))}
           <Link href="/login" className="text-sm font-medium text-ash hover:text-navy transition-colors">
             Sign In
           </Link>
-          <a href="#beta" className="px-4 py-2 rounded-lg bg-navy text-white text-sm font-semibold hover:bg-navy-700 transition-colors">
+          <Link href="/#beta" className="px-4 py-2 rounded-lg bg-navy text-white text-sm font-semibold hover:bg-navy-700 transition-colors">
             Join Beta
-          </a>
+          </Link>
         </div>
 
         <button className="md:hidden text-navy" onClick={() => setOpen((v) => !v)} aria-label="Menu">
@@ -56,16 +56,16 @@ export function Nav() {
       {open && (
         <div className="md:hidden bg-white border-b border-line flex flex-col p-5 gap-3.5">
           {LINKS.map((l) => (
-            <a key={l.href} href={l.href} onClick={() => setOpen(false)} className="text-sm font-medium text-navy">
+            <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="text-sm font-medium text-navy">
               {l.label}
-            </a>
+            </Link>
           ))}
           <Link href="/login" onClick={() => setOpen(false)} className="text-sm font-medium text-ash">
             Sign In
           </Link>
-          <a href="#beta" onClick={() => setOpen(false)} className="px-4 py-2.5 rounded-lg bg-navy text-white text-sm font-semibold text-center">
+          <Link href="/#beta" onClick={() => setOpen(false)} className="px-4 py-2.5 rounded-lg bg-navy text-white text-sm font-semibold text-center">
             Join Beta
-          </a>
+          </Link>
         </div>
       )}
     </nav>

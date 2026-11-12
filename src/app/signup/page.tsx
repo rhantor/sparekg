@@ -106,6 +106,12 @@ export default function SignupPage() {
           <p className="text-[0.7rem] text-ash text-center mt-4">
             You&apos;ll verify your identity (KYC) before posting or bidding.
           </p>
+          <p className="text-[0.7rem] text-ash text-center mt-2">
+            By creating an account you agree to our{' '}
+            <Link href="/terms" className="underline hover:text-navy">Terms of Service</Link>,{' '}
+            <Link href="/privacy" className="underline hover:text-navy">Privacy Policy</Link> and{' '}
+            <Link href="/prohibited-items" className="underline hover:text-navy">Prohibited Items</Link> rules.
+          </p>
         </div>
 
         <p className="text-center text-sm text-ash mt-6">
