@@ -9,8 +9,8 @@
  * exist only in the emulator's memory and vanish when it stops.
  */
 
-process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080';
-process.env.FIREBASE_AUTH_EMULATOR_HOST ??= '127.0.0.1:9099';
+process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8180';
+process.env.FIREBASE_AUTH_EMULATOR_HOST ??= '127.0.0.1:9199';
 process.env.GCLOUD_PROJECT ??= 'demo-sparekg';
 
 const admin = require('firebase-admin');
@@ -50,9 +50,9 @@ async function ensureUser({ email, name, phone, claims = {} }) {
 async function client(key) {
   const app = initializeApp({ apiKey: 'demo-key', projectId: PROJECT }, key);
   const auth = getAuth(app);
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectAuthEmulator(auth, 'http://127.0.0.1:9199', { disableWarnings: true });
   const functions = getFunctions(app, 'us-central1');
-  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  connectFunctionsEmulator(functions, '127.0.0.1', 5101);
   await signInWithEmailAndPassword(auth, USERS[key].email, DEMO_PASSWORD);
   return (fn, data) => httpsCallable(functions, fn)(data).then((r) => r.data);
 }
@@ -69,7 +69,7 @@ async function flight(id, travelerId, hoursFromNow, flightNumber) {
     airline: 'Malaysia Airlines', flightNumber,
     totalKgAvailable: 20, kgRemaining: 20, pricePerKg: 25, fixedTotalPrice: null, currency: 'MYR',
     acceptedCategories: ['Documents', 'Clothing', 'Gifts'], prohibitedItems: [], specialNotes: null,
-    status: 'LIVE', isFeatured: false, featuredUntil: null, bidCount: 0, ticketStatus: 'VERIFIED',
+    status: 'LIVE', bidCount: 0, ticketStatus: 'VERIFIED',
     createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
   });
 }

@@ -69,17 +69,17 @@ async function makeUser(name, { phone = '+60123456789', kyc = true, adminRole = 
     name,
   );
   const auth = getAuth(app);
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectAuthEmulator(auth, 'http://127.0.0.1:9199', { disableWarnings: true });
   const fdb = getFirestore(app);
-  connectFirestoreEmulator(fdb, '127.0.0.1', 8080);
+  connectFirestoreEmulator(fdb, '127.0.0.1', 8180);
   const functions = getFunctions(app, 'us-central1');
-  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  connectFunctionsEmulator(functions, '127.0.0.1', 5101);
 
   const cred = await createUserWithEmailAndPassword(auth, `${name}@test.dev`, 'password123');
   const uid = cred.user.uid;
 
-  // onUserCreate seeds the profile and the sign-up bonus.
-  await waitFor(async () => (await db.doc(`users/${uid}`).get()).get('promoBalance') > 0, `${name} profile`);
+  // onUserCreate seeds the profile.
+  await waitFor(async () => (await db.doc(`users/${uid}`).get()).exists, `${name} profile`);
   await db.doc(`users/${uid}`).update({ phone, displayName: name });
   const claims = {};
   if (kyc) claims.kycApproved = true;
@@ -114,8 +114,6 @@ async function makeFlight(id, travelerId, { departsInHours = 72, kg = 10, priceP
     prohibitedItems: [],
     specialNotes: null,
     status: 'LIVE',
-    isFeatured: false,
-    featuredUntil: null,
     bidCount: 0,
     ticketStatus: 'VERIFIED',
     createdAt: Timestamp.now(),
@@ -126,11 +124,6 @@ async function makeFlight(id, travelerId, { departsInHours = 72, kg = 10, priceP
 const bid = (flightId, kg = 2) => ({
   flightId, kgRequested: kg, itemCategory: 'Documents', itemDescription: 'Two books', declaredValue: 50,
 });
-
-const balanceOf = async (uid) => {
-  const u = (await db.doc(`users/${uid}`).get()).data();
-  return u.pointsBalance + u.promoBalance;
-};
 
 /** Pretends the plane left: moves both the flight and the deal snapshot into the past. */
 async function depart(flightId, dealIds) {
@@ -152,11 +145,12 @@ async function depart(flightId, dealIds) {
   await makeFlight('F1', traveler.uid);
   let bidId;
 
-  await step('sender bids; the fee is held', async () => {
-    const before = await balanceOf(sender.uid);
+  await step('sender bids for free; the bid carries no points fields', async () => {
     ({ bidId } = await sender.call('submitBid', bid('F1')));
-    assert.equal((await db.doc(`bids/${bidId}`).get()).get('status'), 'PENDING');
-    assert.ok((await balanceOf(sender.uid)) < before, 'hold should reduce the balance');
+    const placed = (await db.doc(`bids/${bidId}`).get()).data();
+    assert.equal(placed.status, 'PENDING');
+    assert.equal(placed.pointsHeld, undefined);
+    assert.equal((await db.doc('flights/F1').get()).get('bidCount'), 1);
   });
 
   await step('a second pending bid on the same flight is refused', async () => {
@@ -258,18 +252,16 @@ async function depart(flightId, dealIds) {
     await rejects(stranger.call('submitRating', { bidId, stars: 1 }), 'permission-denied');
   });
 
-  await step('settlement waits out the dispute window, then rewards both sides once', async () => {
+  await step('settlement waits out the dispute window, then counts the trip once', async () => {
     await fns.settleTransactions.run({});
     assert.equal((await db.doc(`transactions/${bidId}`).get()).get('payoutStatus'), 'PENDING', 'too early');
 
     const old = Timestamp.fromMillis(Date.now() - 73 * 3600_000);
     await db.doc(`transactions/${bidId}`).update({ deliveredAt: old });
-    const tBefore = await balanceOf(traveler.uid);
     await fns.settleTransactions.run({});
-    await fns.settleTransactions.run({}); // idempotent: a second run must not pay twice
+    await fns.settleTransactions.run({}); // idempotent: a second run must not count twice
     const deal = (await db.doc(`transactions/${bidId}`).get()).data();
     assert.equal(deal.payoutStatus, 'RELEASED');
-    assert.equal(await balanceOf(traveler.uid), tBefore + 25);
     assert.equal((await db.doc(`users/${traveler.uid}`).get()).get('completedTripsAsTraveler'), 1);
     assert.equal((await db.doc(`users/${sender.uid}`).get()).get('completedTripsAsSender'), 1);
   });
@@ -306,47 +298,67 @@ async function depart(flightId, dealIds) {
   });
 
   // ---- Withdraw, cancel, expiry ----
-  await step('withdrawing a pending bid returns the hold in full', async () => {
+  await step('only the sender can withdraw a pending bid, once', async () => {
     await makeFlight('F3', traveler.uid);
-    const before = await balanceOf(sender.uid);
     const { bidId: b3 } = await sender.call('submitBid', bid('F3'));
     await rejects(traveler.call('withdrawBid', { bidId: b3 }), 'permission-denied');
     await sender.call('withdrawBid', { bidId: b3 });
     assert.equal((await db.doc(`bids/${b3}`).get()).get('status'), 'WITHDRAWN');
-    assert.equal(await balanceOf(sender.uid), before);
     await rejects(sender.call('withdrawBid', { bidId: b3 }), 'failed-precondition');
   });
 
-  await step('cancelling a flight declines pending bids and refunds them', async () => {
+  await step('cancelling a flight declines its pending bids', async () => {
     await makeFlight('F4', traveler.uid);
-    const before = await balanceOf(sender2.uid);
     const { bidId: b4 } = await sender2.call('submitBid', bid('F4'));
     await rejects(sender2.call('cancelFlight', { flightId: 'F4' }), 'permission-denied');
     const res = await traveler.call('cancelFlight', { flightId: 'F4' });
     assert.equal(res.bidsDeclined, 1);
     assert.equal((await db.doc('flights/F4').get()).get('status'), 'CANCELLED');
     assert.equal((await db.doc(`bids/${b4}`).get()).get('status'), 'DECLINED');
-    assert.equal(await balanceOf(sender2.uid), before);
     await rejects(traveler.call('acceptBid', { bidId: b4 }), 'failed-precondition');
   });
 
-  await step('a departed flight with no agreements expires and refunds its bids', async () => {
+  await step('a departed flight with no agreements expires along with its bids', async () => {
     await makeFlight('F5', traveler.uid);
-    const before = await balanceOf(sender2.uid);
     const { bidId: b5 } = await sender2.call('submitBid', bid('F5'));
     await depart('F5', []);
     await fns.expireFlights.run({});
     assert.equal((await db.doc('flights/F5').get()).get('status'), 'EXPIRED');
     assert.equal((await db.doc(`bids/${b5}`).get()).get('status'), 'EXPIRED');
-    assert.equal(await balanceOf(sender2.uid), before);
   });
 
-  await step('ledger reconciles: sum(delta) equals the cached balance for every user', async () => {
-    for (const u of [traveler, sender, sender2, stranger, staff, noPhone]) {
-      const rows = await db.collection('points_ledger').where('userId', '==', u.uid).get();
-      const sum = rows.docs.reduce((s, d) => s + d.get('delta'), 0);
-      assert.equal(sum, await balanceOf(u.uid), `${u.name} ledger drifted`);
+  // ---- Open-bid cap (bidding is free, so this is the spam control) ----
+  await step('a sender may hold at most 5 open bids; closing one frees a slot', async () => {
+    const eager = await makeUser('eager');
+    const placed = [];
+    for (let i = 1; i <= 5; i++) {
+      await makeFlight(`CAP-${i}`, traveler.uid);
+      placed.push((await eager.call('submitBid', bid(`CAP-${i}`))).bidId);
     }
+    await makeFlight('CAP-6', traveler.uid);
+    const err = await rejects(eager.call('submitBid', bid('CAP-6')), 'resource-exhausted');
+    assert.match(err.message, /5 offers waiting/);
+    assert.equal((await db.doc('flights/CAP-6').get()).get('bidCount'), 0, 'a refused bid must not count');
+
+    await eager.call('withdrawBid', { bidId: placed[0] });
+    await eager.call('submitBid', bid('CAP-6'));
+
+    // An accepted bid is no longer "waiting", so it frees a slot too.
+    await traveler.call('acceptBid', { bidId: placed[1] });
+    await makeFlight('CAP-7', traveler.uid);
+    await eager.call('submitBid', bid('CAP-7'));
+  });
+
+  await step('the points system is gone: no ledger rows, no balances, no points callables', async () => {
+    assert.equal((await db.collection('points_ledger').limit(1).get()).size, 0);
+    const profile = (await db.doc(`users/${sender.uid}`).get()).data();
+    assert.equal(profile.pointsBalance, undefined);
+    assert.equal(profile.promoBalance, undefined);
+    for (const name of ['featureFlight', 'boostBid', 'updateAppConfig', 'grantMonthlyPoints', 'expireBoosts']) {
+      assert.equal(fns[name], undefined, `${name} should not be exported`);
+    }
+    await rejects(sender.read('points_ledger/any'), 'permission-denied');
+    await rejects(sender.read('app_config/main'), 'permission-denied');
   });
 
   console.log(`\n${passed} checks passed.`);

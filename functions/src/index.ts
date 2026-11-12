@@ -32,27 +32,11 @@ import {
   validateOpenDispute,
   validateResolveDispute,
   type DisputeOutcome,
-  validateFeatureFlight,
-  validateBoostBid,
-  validateUpdateAppConfig,
   validateReviewFlightTicket,
   validateLookupFlight,
   servedRoute,
 } from './validation';
-import {
-  prepareEntry,
-  commitEntry,
-  postEntry,
-  getPointsEconomy,
-  getFeatureFlags,
-  urgencyCost,
-  extendExpiry,
-  URGENCY_HOURS,
-  entryIds,
-  currentPeriod,
-  periodStart,
-  getPlatformFeePercent,
-} from './points';
+import { getPlatformFeePercent } from './config';
 
 admin.initializeApp();
 
@@ -60,6 +44,15 @@ const db = admin.firestore();
 
 /** How long a sender's bid stays open for the traveler to answer. */
 const BID_WINDOW_HOURS = 48;
+
+/**
+ * Offers one sender may have waiting on travelers at once, across all flights.
+ *
+ * Bidding is free, so this is what keeps one account from flooding every
+ * listing on a route: each bid has to be answered, withdrawn or expire before
+ * a sixth can be placed.
+ */
+const MAX_OPEN_BIDS_PER_SENDER = 5;
 
 /** Either party may dispute until this long after delivery (blueprint §5.5). */
 const DISPUTE_WINDOW_HOURS = 72;
@@ -158,12 +151,6 @@ export const onUserCreate = authTriggers.user().onCreate(async (user) => {
     roles: ['traveler', 'sender'],
     kycStatus: 'PENDING',
     kycSubmissionRef: null,
-    // Points are issued by the ledger in Phase 3; a flat balance here would be
-    // unbacked by any ledger entry and break reconciliation.
-    pointsBalance: 0,
-    promoBalance: 0,
-    lifetimePointsEarned: 0,
-    lifetimePointsSpent: 0,
     completedTripsAsTraveler: 0,
     completedTripsAsSender: 0,
     averageRating: 0,
@@ -172,9 +159,6 @@ export const onUserCreate = authTriggers.user().onCreate(async (user) => {
     homeAirportCode: null,
     createdAt: FieldValue.serverTimestamp(),
     lastActiveAt: FieldValue.serverTimestamp(),
-    // Distinct from lastActiveAt, which only means "opened the app". This is set
-    // by postFlight and submitBid and is what the monthly credit qualifies on.
-    lastActivityAt: null,
     suspended: false,
     suspensionReason: null,
   };
@@ -185,113 +169,7 @@ export const onUserCreate = authTriggers.user().onCreate(async (user) => {
     logger.info('User document created', { uid: user.uid });
   } catch (error) {
     logger.error('Failed to create user document', { uid: user.uid, error });
-    return;
   }
-
-  // The opening balance is issued as a ledger entry rather than baked into the
-  // document above, so it is backed by a row like every other point in the
-  // system. It lands in the promotional bucket: a sign-up gift is spendable but
-  // not withdrawable, and is spent ahead of anything the user paid for.
-  //
-  // Posted after the profile exists because the ledger writes the balance onto
-  // it. A failure here leaves a usable account with a zero balance, which the
-  // monthly grant will correct — far better than failing account creation.
-  try {
-    const economy = await getPointsEconomy();
-    if (economy.signupBonus > 0) {
-      await postEntry({
-        entryId: entryIds.signup(user.uid),
-        userId: user.uid,
-        delta: economy.signupBonus,
-        category: 'SIGNUP',
-        referenceType: 'NONE',
-        referenceId: null,
-        description: 'Welcome bonus',
-        createdBy: 'SYSTEM',
-        toPromo: true,
-      });
-    }
-  } catch (error) {
-    logger.error('Failed to issue signup bonus', { uid: user.uid, error });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// App configuration
-// ---------------------------------------------------------------------------
-
-/**
- * Writes the tunables in `app_config/main` that the economy runs on.
- *
- * Firestore rules deny every client write to `app_config`, so this callable is
- * the only way in — the same shape as the rest of the system, where the client
- * names an intent and the server decides. `getPointsEconomy` and
- * `getFeatureFlags` merge whatever is stored here over the built-in defaults, so
- * a partial document is fine and a missing one costs nothing.
- *
- * Super admin, not admin. These fields are money levers rather than moderation
- * ones: `signupBonus` mints points into the ledger for every account created
- * afterwards, and `bidSubmitCost` sets what every sender is charged. That is the
- * same bar `setUserRole` is held to.
- *
- * Merged field by field rather than replacing the document, so two admins saving
- * different sections of the form cannot silently wipe each other's work, and a
- * key this server version does not know about survives the write.
- */
-export const updateAppConfig = onCall(async (request) => {
-  const caller = requireAuth(request);
-  if (!caller.isSuperAdmin) {
-    throw new HttpsError('permission-denied', 'Only a super admin can change app configuration.');
-  }
-
-  const input = validateUpdateAppConfig(request.data);
-  const ref = db.collection('app_config').doc('main');
-
-  const before = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const current = snap.exists ? snap.data()! : {};
-
-    const merged = {
-      pointsEconomy: { ...(current.pointsEconomy ?? {}), ...input.pointsEconomy },
-      featureFlags: { ...(current.featureFlags ?? {}), ...input.featureFlags },
-      updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: caller.uid,
-    };
-
-    // set with merge rather than update: the document legitimately may not exist
-    // yet, and update() would throw instead of creating it.
-    tx.set(ref, merged, { merge: true });
-
-    return {
-      pointsEconomy: current.pointsEconomy ?? null,
-      featureFlags: current.featureFlags ?? null,
-    };
-  });
-
-  // Audited outside the transaction: an audit row is a record of what happened,
-  // and a failure to write one must not roll back a change that did happen.
-  await writeAudit({
-    actorUid: caller.uid,
-    action: 'CONFIG_CHANGED',
-    targetType: 'APP_CONFIG',
-    targetId: 'main',
-    reason: 'Economy settings changed from the admin console',
-    beforeState: before,
-    afterState: { pointsEconomy: input.pointsEconomy, featureFlags: input.featureFlags },
-  });
-
-  logger.info('App config updated', {
-    uid: caller.uid,
-    economyKeys: Object.keys(input.pointsEconomy),
-    flagKeys: Object.keys(input.featureFlags),
-  });
-
-  // Echoed back so the console can render exactly what the server now holds,
-  // defaults included, instead of guessing from what it sent.
-  return {
-    pointsEconomy: await getPointsEconomy(),
-    featureFlags: await getFeatureFlags(),
-  };
 });
 
 // ---------------------------------------------------------------------------
@@ -510,24 +388,6 @@ export const onKycApproved = onDocumentUpdated(
  * publish a flight that is already LOCKED, pre-loaded with bids, or attributed
  * to someone else.
  */
-/**
- * Records that a user took part in the marketplace, for the monthly free credit.
- *
- * Written outside the caller's transaction and deliberately swallowed on error:
- * this is a reward-eligibility marker, not part of the atomic unit, and a failed
- * stamp must never roll back a posted flight or an accepted bid. The worst case
- * is a user who is briefly not credited as active, which the floor covers.
- */
-async function stampActivity(uid: string): Promise<void> {
-  try {
-    await db.collection('users').doc(uid).update({
-      lastActivityAt: FieldValue.serverTimestamp(),
-    });
-  } catch (error) {
-    logger.warn('Failed to stamp activity', { uid, error });
-  }
-}
-
 export const postFlight = onCall(async (request) => {
   const caller = requireVerified(request);
   const input = validatePostFlight(request.data);
@@ -599,11 +459,8 @@ export const postFlight = onCall(async (request) => {
     acceptedCategories: input.acceptedCategories,
     prohibitedItems: input.prohibitedItems,
     specialNotes: input.specialNotes,
-    // Phase 2 posts are free, so a listing goes straight to LIVE. When the points
-    // economy lands, an underfunded post starts as DRAFT instead.
+    // Posting is free, so a listing goes straight to LIVE.
     status: 'LIVE' satisfies FlightStatus,
-    isFeatured: false,
-    featuredUntil: null,
     bidCount: 0,
     // Staff check the ticket against the listing; acceptBid waits for VERIFIED.
     ticketStatus: 'PENDING',
@@ -621,11 +478,6 @@ export const postFlight = onCall(async (request) => {
     createdAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
-
-  // Marks the account as taking part this month, which is what qualifies it for
-  // the monthly free credit. Best-effort: a failure here must not undo a posted
-  // flight, and the floor in grantMonthlyPoints catches anyone it misses.
-  await stampActivity(caller.uid);
 
   logger.info('Flight posted', { flightId: flightRef.id, uid: caller.uid });
   return { flightId: flightRef.id };
@@ -652,11 +504,6 @@ export const submitBid = onCall(async (request) => {
   const bidRef = db.collection('bids').doc();
   const expiresAt = new Date(Date.now() + BID_WINDOW_HOURS * 3600_000);
 
-  // Read outside the transaction: config is not part of the atomic unit, and a
-  // read of it inside would only add contention.
-  const economy = await getPointsEconomy();
-  const bidCost = economy.bidSubmitCost;
-
   await db.runTransaction(async (tx) => {
     const flightSnap = await tx.get(flightRef);
     if (!flightSnap.exists) {
@@ -680,21 +527,27 @@ export const submitBid = onCall(async (request) => {
       );
     }
 
-    // One open offer per sender per flight. Besides being what a traveler
-    // expects to see, it keeps every bulk refund (cancel, expiry, ticket
-    // rejection) at one ledger entry per sender, which prepareEntry requires.
-    // Read inside the transaction so a double-click cannot slip two past it.
-    const existing = await tx.get(
+    // Bidding is free, so two limits stand in for a fee: one open offer per
+    // flight (what a traveler expects to see), and a cap on open offers overall
+    // so one account cannot paper every listing on a route. Read inside the
+    // transaction so a double-click cannot slip two past the first.
+    const open = await tx.get(
       db.collection('bids')
-        .where('flightId', '==', input.flightId)
         .where('senderId', '==', caller.uid)
         .where('status', '==', 'PENDING' satisfies BidStatus)
-        .limit(1),
+        .limit(MAX_OPEN_BIDS_PER_SENDER),
     );
-    if (!existing.empty) {
+    if (open.docs.some((d) => d.get('flightId') === input.flightId)) {
       throw new HttpsError(
         'already-exists',
         'You already have an offer waiting on this flight. Withdraw it first to change it.',
+      );
+    }
+    if (open.size >= MAX_OPEN_BIDS_PER_SENDER) {
+      throw new HttpsError(
+        'resource-exhausted',
+        `You have ${MAX_OPEN_BIDS_PER_SENDER} offers waiting for an answer, which is the most you can `
+          + 'have at once. Withdraw one, or wait for a traveler to reply.',
       );
     }
 
@@ -723,25 +576,6 @@ export const submitBid = onCall(async (request) => {
       offeredTotal = flight.fixedTotalPrice;
     }
 
-    // Hold the bid fee before any write below — Firestore requires every read in
-    // a transaction to precede every write, and preparing the entry reads the
-    // bidder's balance. An insufficient balance throws here and the bid is never
-    // created, so a sender can never hold a slot they cannot pay for.
-    const hold = bidCost > 0
-      ? await prepareEntry(tx, {
-          entryId: entryIds.bidHold(bidRef.id),
-          userId: caller.uid,
-          delta: -bidCost,
-          category: 'BID_HOLD',
-          referenceType: 'BID',
-          referenceId: bidRef.id,
-          // postFlight writes originAirport/destinationAirport, both validated as
-          // IATA codes, so they are always present on a flight document.
-          description: `Hold for bid on ${flight.originAirport}→${flight.destinationAirport}`,
-          createdBy: 'USER',
-        })
-      : null;
-
     tx.set(bidRef, {
       bidId: bidRef.id,
       flightId: input.flightId,
@@ -761,12 +595,6 @@ export const submitBid = onCall(async (request) => {
       offeredPricePerKg,
       offeredTotal,
       currency: flight.currency,
-      urgencyLevel: 0,
-      urgencyExpiresAt: null,
-      pointsHeld: bidCost,
-      // Which bucket the hold came from, so a refund can put it back where it
-      // came from without re-deriving it from the ledger.
-      pointsHeldPromo: hold?.promoPortion ?? 0,
       status: 'PENDING' satisfies BidStatus,
       agreedAt: null,
       expiresAt: Timestamp.fromDate(expiresAt),
@@ -778,232 +606,10 @@ export const submitBid = onCall(async (request) => {
       bidCount: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp(),
     });
-
-    if (hold) commitEntry(tx, hold);
   });
 
-  await stampActivity(caller.uid);
-
-  logger.info('Bid submitted', {
-    bidId: bidRef.id,
-    flightId: input.flightId,
-    uid: caller.uid,
-    pointsHeld: bidCost,
-  });
+  logger.info('Bid submitted', { bidId: bidRef.id, flightId: input.flightId, uid: caller.uid });
   return { bidId: bidRef.id };
-});
-
-// ---------------------------------------------------------------------------
-// Paid visibility boosts
-//
-// Both callables spend points through the ledger, so the same invariant holds
-// as everywhere else: points.ts is the only thing that moves a balance, and
-// sum(delta) must still reconcile against the user document afterwards.
-//
-// Neither boost is refundable once bought. That is why every eligibility check
-// runs inside the transaction, before the debit: a flight that has departed or
-// a bid that is no longer PENDING must fail without taking the points.
-// ---------------------------------------------------------------------------
-
-/**
- * Buys featured placement on the caller's own flight listing.
- *
- * Sold in 24-hour blocks. Buying again while a run is still live extends it
- * rather than restarting the clock, so paid-for time is never destroyed.
- */
-export const featureFlight = onCall(async (request) => {
-  const caller = requireVerified(request);
-  const input = validateFeatureFlight(request.data);
-  await requireActiveUser(caller.uid);
-
-  // Config reads stay outside the transaction: they are not part of the atomic
-  // unit and reading them inside would only add contention.
-  const [economy, flags] = await Promise.all([getPointsEconomy(), getFeatureFlags()]);
-  if (!flags.enableFeaturedListings) {
-    throw new HttpsError('failed-precondition', 'Featured listings are not available right now.');
-  }
-
-  const cost = economy.featuredCostPer24h * input.blocks;
-  const flightRef = db.collection('flights').doc(input.flightId);
-
-  const result = await db.runTransaction(async (tx) => {
-    const flightSnap = await tx.get(flightRef);
-    if (!flightSnap.exists) {
-      throw new HttpsError('not-found', 'That flight no longer exists.');
-    }
-    const flight = flightSnap.data()!;
-
-    // Ownership, not just authentication — otherwise any verified user could
-    // spend their own points to promote someone else's listing.
-    if (flight.travelerId !== caller.uid) {
-      throw new HttpsError('permission-denied', 'You can only feature your own listing.');
-    }
-    if (!acceptsNewBids(flight.status as FlightStatus)) {
-      throw new HttpsError('failed-precondition', 'Only a live listing can be featured.');
-    }
-
-    const now = new Date();
-    const departure: Date = flight.departureAt.toDate();
-    if (departure <= now) {
-      throw new HttpsError('failed-precondition', 'This flight has already departed.');
-    }
-
-    const currentUntil: Date | null =
-      flight.featuredUntil && flight.featuredUntil.toDate ? flight.featuredUntil.toDate() : null;
-    let featuredUntil = extendExpiry(currentUntil, input.blocks * 24, now);
-
-    // Featured placement past departure is placement nobody can act on, so the
-    // run is clipped to the departure time.
-    if (featuredUntil > departure) featuredUntil = departure;
-
-    const seq: number =
-      typeof flight.featurePurchaseCount === 'number' ? flight.featurePurchaseCount : 0;
-
-    // The debit is prepared before any write: Firestore requires every read in a
-    // transaction to precede every write, and preparing reads the balance. An
-    // underfunded caller throws here and nothing is featured.
-    const charge = cost > 0
-      ? await prepareEntry(tx, {
-          entryId: entryIds.feature(flightRef.id, seq),
-          userId: caller.uid,
-          delta: -cost,
-          category: 'FEATURE',
-          referenceType: 'FLIGHT',
-          referenceId: flightRef.id,
-          description:
-            `Featured ${flight.originAirport}→${flight.destinationAirport}` +
-            ` for ${input.blocks * 24}h`,
-          createdBy: 'USER',
-        })
-      : null;
-
-    tx.update(flightRef, {
-      isFeatured: true,
-      featuredUntil: Timestamp.fromDate(featuredUntil),
-      featurePurchaseCount: seq + 1,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    if (charge) commitEntry(tx, charge);
-
-    return { featuredUntil: featuredUntil.toISOString() };
-  });
-
-  logger.info('Flight featured', {
-    flightId: input.flightId,
-    uid: caller.uid,
-    blocks: input.blocks,
-    pointsSpent: cost,
-  });
-  return { flightId: input.flightId, featuredUntil: result.featuredUntil, pointsSpent: cost };
-});
-
-/**
- * Buys an urgency boost on the caller's own pending bid.
- *
- * Each level is a fixed block (24/48/72h) at its own price. Re-buying the level
- * already running extends it; buying a higher level starts a fresh block at the
- * new tier. Dropping to a lower level while a higher one is live is refused
- * rather than charged, because it would buy less visibility than is already
- * running.
- */
-export const boostBid = onCall(async (request) => {
-  const caller = requireVerified(request);
-  const input = validateBoostBid(request.data);
-  await requireActiveUser(caller.uid);
-
-  const [economy, flags] = await Promise.all([getPointsEconomy(), getFeatureFlags()]);
-  if (!flags.enableUrgencyBoosts) {
-    throw new HttpsError('failed-precondition', 'Urgency boosts are not available right now.');
-  }
-
-  const cost = urgencyCost(economy, input.level);
-  const hours = URGENCY_HOURS[input.level];
-  const bidRef = db.collection('bids').doc(input.bidId);
-
-  const result = await db.runTransaction(async (tx) => {
-    const bidSnap = await tx.get(bidRef);
-    if (!bidSnap.exists) {
-      throw new HttpsError('not-found', 'That bid no longer exists.');
-    }
-    const bid = bidSnap.data()!;
-
-    if (bid.senderId !== caller.uid) {
-      throw new HttpsError('permission-denied', 'You can only boost your own bid.');
-    }
-    if ((bid.status as BidStatus) !== 'PENDING') {
-      throw new HttpsError('failed-precondition', 'Only a pending bid can be boosted.');
-    }
-
-    const now = new Date();
-    const bidExpiresAt: Date = bid.expiresAt.toDate();
-    if (bidExpiresAt <= now) {
-      throw new HttpsError('failed-precondition', 'This bid has already expired.');
-    }
-
-    const currentExpiry: Date | null =
-      bid.urgencyExpiresAt && bid.urgencyExpiresAt.toDate ? bid.urgencyExpiresAt.toDate() : null;
-    const activeLevel: number =
-      currentExpiry && currentExpiry > now && typeof bid.urgencyLevel === 'number'
-        ? bid.urgencyLevel
-        : 0;
-
-    if (activeLevel > input.level) {
-      throw new HttpsError(
-        'failed-precondition',
-        `This bid already has a level ${activeLevel} boost running.`,
-      );
-    }
-
-    // Same level extends the run; a higher level starts its own block, since the
-    // time remaining was bought at a cheaper tier and does not carry across.
-    let urgencyExpiresAt =
-      activeLevel === input.level
-        ? extendExpiry(currentExpiry, hours, now)
-        : new Date(now.getTime() + hours * 3600_000);
-
-    // A boost outliving the bid it promotes is time nobody can use.
-    if (urgencyExpiresAt > bidExpiresAt) urgencyExpiresAt = bidExpiresAt;
-
-    const seq: number =
-      typeof bid.urgencyPurchaseCount === 'number' ? bid.urgencyPurchaseCount : 0;
-
-    const charge = cost > 0
-      ? await prepareEntry(tx, {
-          entryId: entryIds.urgency(bidRef.id, seq),
-          userId: caller.uid,
-          delta: -cost,
-          category: 'URGENCY',
-          referenceType: 'BID',
-          referenceId: bidRef.id,
-          description: `Urgency level ${input.level} for ${hours}h`,
-          createdBy: 'USER',
-        })
-      : null;
-
-    tx.update(bidRef, {
-      urgencyLevel: input.level,
-      urgencyExpiresAt: Timestamp.fromDate(urgencyExpiresAt),
-      urgencyPurchaseCount: seq + 1,
-    });
-
-    if (charge) commitEntry(tx, charge);
-
-    return { urgencyExpiresAt: urgencyExpiresAt.toISOString() };
-  });
-
-  logger.info('Bid boosted', {
-    bidId: input.bidId,
-    uid: caller.uid,
-    level: input.level,
-    pointsSpent: cost,
-  });
-  return {
-    bidId: input.bidId,
-    level: input.level,
-    urgencyExpiresAt: result.urgencyExpiresAt,
-    pointsSpent: cost,
-  };
 });
 
 /**
@@ -1093,33 +699,11 @@ export const acceptBid = onCall(async (request) => {
 
     const kgRemaining = Math.round((flight.kgRemaining - bid.kgRequested) * 100) / 100;
 
-    // Capture: the hold taken at bid time becomes final. The points already left
-    // the balance, so this moves nothing — it is a zero-delta row recording that
-    // the hold was consumed rather than refunded. Without it the ledger would
-    // show a debit that simply never resolves, and reconciliation could not tell
-    // a captured hold from one still outstanding.
-    const held: number = typeof bid.pointsHeld === 'number' ? bid.pointsHeld : 0;
-    const capture = held > 0
-      ? await prepareEntry(tx, {
-          entryId: entryIds.bidCapture(bidId),
-          userId: bid.senderId as string,
-          delta: 0,
-          category: 'BID_CAPTURE',
-          referenceType: 'BID',
-          referenceId: bidId,
-          refundOf: entryIds.bidHold(bidId),
-          description: 'Bid accepted — hold captured',
-          createdBy: 'SYSTEM',
-        })
-      : null;
-
     tx.update(bidRef, {
       status: 'AGREED' satisfies BidStatus,
       agreedAt: FieldValue.serverTimestamp(),
       transactionId: bidId,
     });
-
-    if (capture) commitEntry(tx, capture);
 
     tx.update(flightRef, {
       kgRemaining,
@@ -1209,69 +793,6 @@ export const acceptBid = onCall(async (request) => {
   return { success: true, ...result };
 });
 
-/**
- * Returns a bid's hold to the sender.
- *
- * Shared by decline and expiry because the rule is the same either way: a bid
- * the sender never got a deal out of costs them nothing. Idempotent through the
- * deterministic refund id, so a decline racing the expiry sweep cannot pay the
- * hold back twice.
- *
- * Read-only, like every `prepare*` — the caller commits it after its own writes.
- */
-async function prepareBidRefund(
-  tx: admin.firestore.Transaction,
-  bidId: string,
-  bid: admin.firestore.DocumentData,
-  description: string,
-) {
-  const held: number = typeof bid.pointsHeld === 'number' ? bid.pointsHeld : 0;
-  if (held <= 0) return null;
-
-  return prepareEntry(tx, {
-    entryId: entryIds.bidRefund(bidId),
-    userId: bid.senderId as string,
-    delta: held,
-    category: 'BID_REFUND',
-    referenceType: 'BID',
-    referenceId: bidId,
-    refundOf: entryIds.bidHold(bidId),
-    restorePromo: typeof bid.pointsHeldPromo === 'number' ? bid.pointsHeldPromo : 0,
-    description,
-    createdBy: 'SYSTEM',
-  });
-}
-
-/**
- * Refunds for a batch of pending bids that one transaction closes together.
- *
- * prepareEntry allows one entry per user per transaction — a second one would
- * compute from the same starting balance and overwrite the first, silently
- * losing points. submitBid now allows one pending bid per sender per flight,
- * but bids placed before that rule could still pair up, so a repeat sender is
- * left PENDING here: it is not closed, and expireStaleBids refunds it on its
- * own transaction when it lapses.
- */
-async function prepareBulkRefunds(
-  tx: admin.firestore.Transaction,
-  docs: admin.firestore.QueryDocumentSnapshot[],
-  description: string,
-) {
-  const seen = new Set<string>();
-  const refunds = [];
-  for (const bidDoc of docs) {
-    const bid = bidDoc.data();
-    const senderId = bid.senderId as string;
-    if (seen.has(senderId)) {
-      logger.warn('Second pending bid from one sender left for expiry', { bidId: bidDoc.id });
-      continue;
-    }
-    seen.add(senderId);
-    refunds.push({ ref: bidDoc.ref, entry: await prepareBidRefund(tx, bidDoc.id, bid, description) });
-  }
-  return refunds;
-}
-
 /** Bids on one flight in the given states, read inside a transaction. */
 function bidsOnFlight(
   tx: admin.firestore.Transaction,
@@ -1287,7 +808,7 @@ function bidsOnFlight(
   );
 }
 
-/** Declines a bid: PENDING -> DECLINED. The sender's hold is returned. */
+/** Declines a bid: PENDING -> DECLINED. */
 export const declineBid = onCall(async (request) => {
   const caller = requireAuth(request);
   const bidId = validateBidId(request.data);
@@ -1306,10 +827,7 @@ export const declineBid = onCall(async (request) => {
     const check = canTransitionBid(bid.status as BidStatus, 'DECLINED', actor);
     if (!check.allowed) throw new HttpsError('failed-precondition', check.reason!);
 
-    const refund = await prepareBidRefund(tx, bidId, bid, 'Bid declined — hold returned');
-
-    tx.update(bidRef, { status: 'DECLINED' satisfies BidStatus, pointsHeld: 0 });
-    if (refund) commitEntry(tx, refund);
+    tx.update(bidRef, { status: 'DECLINED' satisfies BidStatus });
   });
 
   logger.info('Bid declined', { bidId, uid: caller.uid });
@@ -1331,9 +849,9 @@ export const expireStaleBids = onSchedule('every 60 minutes', async () => {
 
   if (stale.empty) return;
 
-  // One transaction per bid rather than a single batch: returning the hold means
-  // reading the sender's balance, and a batch cannot read. Bids are independent,
-  // so a failure on one must not abandon the rest — hence the per-bid catch.
+  // One transaction per bid rather than a single batch: each status is
+  // re-checked before it is written, and a batch cannot read. Bids are
+  // independent, so a failure on one must not abandon the rest.
   let expired = 0;
   let failed = 0;
 
@@ -1349,10 +867,7 @@ export const expireStaleBids = onSchedule('every 60 minutes', async () => {
         const check = canTransitionBid(bid.status as BidStatus, 'EXPIRED', 'SYSTEM');
         if (!check.allowed) return;
 
-        const refund = await prepareBidRefund(tx, doc.id, bid, 'Bid expired — hold returned');
-
-        tx.update(doc.ref, { status: 'EXPIRED' satisfies BidStatus, pointsHeld: 0 });
-        if (refund) commitEntry(tx, refund);
+        tx.update(doc.ref, { status: 'EXPIRED' satisfies BidStatus });
         expired++;
       });
     } catch (error) {
@@ -1375,8 +890,8 @@ export const expireStaleBids = onSchedule('every 60 minutes', async () => {
  *
  * Pending bids on the flight are expired in the same transaction. Their own
  * `expiresAt` is set at submit time and can easily fall after departure, so
- * leaving them to `expireStaleBids` would hold a sender's points against a
- * flight that can never be accepted.
+ * leaving them to `expireStaleBids` would keep an offer open — and counting
+ * toward the sender's open-bid cap — on a flight that can never accept it.
  */
 export const expireFlights = onSchedule('every 60 minutes', async () => {
   const now = Timestamp.now();
@@ -1396,14 +911,13 @@ export const expireFlights = onSchedule('every 60 minutes', async () => {
   let bidsExpired = 0;
   let failed = 0;
 
-  // One transaction per flight: refunding a hold reads the sender's balance, and
-  // flights are independent — a failure on one must not abandon the rest.
+  // One transaction per flight, so the flight and its pending bids close
+  // together. Flights are independent — a failure on one must not abandon the rest.
   for (const doc of departed.docs) {
     try {
       await db.runTransaction(async (tx) => {
         // Every read first: Firestore forbids a read after a write in the same
-        // transaction, so the bids are fetched and their refunds prepared before
-        // anything is set.
+        // transaction, so the flight's bids are fetched before anything is set.
         const snap = await tx.get(doc.ref);
         if (!snap.exists) return;
         const flight = snap.data()!;
@@ -1438,16 +952,13 @@ export const expireFlights = onSchedule('every 60 minutes', async () => {
           at = step;
         }
 
-        const refunds = await prepareBulkRefunds(tx, pending.docs, 'Flight departed — hold returned');
-
         tx.update(doc.ref, {
           status: to,
           updatedAt: FieldValue.serverTimestamp(),
         });
 
-        for (const refund of refunds) {
-          tx.update(refund.ref, { status: 'EXPIRED' satisfies BidStatus, pointsHeld: 0 });
-          if (refund.entry) commitEntry(tx, refund.entry);
+        for (const bidDoc of pending.docs) {
+          tx.update(bidDoc.ref, { status: 'EXPIRED' satisfies BidStatus });
           bidsExpired++;
         }
         outcomes[to]++;
@@ -1642,7 +1153,7 @@ async function scheduleCheckFor(input: {
  * Staff decision on the ticket behind a listing.
  *
  * VERIFY unlocks acceptBid for the flight. REJECT cancels the listing and
- * returns every pending bidder's hold — the same unwind expireFlights does.
+ * declines every pending bid on it.
  * acceptBid refuses unverified listings, so a flight still awaiting review
  * cannot hold an agreed bid and a rejection never strands a deal.
  */
@@ -1681,12 +1192,8 @@ export const reviewFlightTicket = onCall(async (request) => {
     const cancel = input.decision === 'REJECT'
       && canTransitionFlight(fromStatus, 'CANCELLED', 'ADMIN').allowed;
 
-    const refunds = cancel
-      ? await prepareBulkRefunds(
-          tx,
-          (await bidsOnFlight(tx, input.flightId, ['PENDING'], 200)).docs,
-          'Listing closed — hold returned',
-        )
+    const pending = cancel
+      ? (await bidsOnFlight(tx, input.flightId, ['PENDING'], 200)).docs
       : [];
 
     const ticketStatus = input.decision === 'VERIFY' ? 'VERIFIED' : 'REJECTED';
@@ -1704,9 +1211,8 @@ export const reviewFlightTicket = onCall(async (request) => {
       reviewedBy: caller.uid,
       reviewedAt: now,
     });
-    for (const refund of refunds) {
-      tx.update(refund.ref, { status: 'DECLINED' satisfies BidStatus, pointsHeld: 0 });
-      if (refund.entry) commitEntry(tx, refund.entry);
+    for (const bidDoc of pending) {
+      tx.update(bidDoc.ref, { status: 'DECLINED' satisfies BidStatus });
     }
 
     // Staged in the same transaction so the decision and its audit row land
@@ -1721,212 +1227,15 @@ export const reviewFlightTicket = onCall(async (request) => {
       targetId: input.flightId,
       reason: input.reason ?? 'Ticket matches the listing',
       beforeState: { ticketStatus: 'PENDING', status: fromStatus },
-      afterState: { ticketStatus, status: toStatus, bidsDeclined: refunds.length },
+      afterState: { ticketStatus, status: toStatus, bidsDeclined: pending.length },
       timestamp: now,
     });
 
-    return { ticketStatus, status: toStatus, bidsDeclined: refunds.length };
+    return { ticketStatus, status: toStatus, bidsDeclined: pending.length };
   });
 
   logger.info('Flight ticket reviewed', { flightId: input.flightId, by: caller.uid, ...result });
   return result;
-});
-
-/**
- * Clears visibility boosts whose paid window has closed.
- *
- * No points move here — the boost was bought outright and is not refundable, so
- * this is pure state cleanup. It still matters that it runs: `isFeatured` and
- * `urgencyLevel` are what the listing queries sort on, so a boost left set would
- * keep giving away placement nobody paid for.
- *
- * Both queries pin the flag as an equality before the time range. Filtering on
- * the timestamp alone would be wrong as well as slow: null sorts before every
- * timestamp in Firestore, so `featuredUntil <= now` on its own would match every
- * listing that was never featured at all.
- */
-export const expireBoosts = onSchedule('every 60 minutes', async () => {
-  const now = Timestamp.now();
-
-  const [flights, bids] = await Promise.all([
-    db.collection('flights')
-      .where('isFeatured', '==', true)
-      .where('featuredUntil', '<=', now)
-      .limit(400)
-      .get(),
-    db.collection('bids')
-      .where('urgencyLevel', 'in', [1, 2, 3])
-      .where('urgencyExpiresAt', '<=', now)
-      .limit(400)
-      .get(),
-  ]);
-
-  let clearedFlights = 0;
-  let clearedBids = 0;
-  let failed = 0;
-
-  // Each clear re-reads and re-checks the expiry inside a transaction. The
-  // owner may have bought another block between the query above and this write,
-  // and a blind clear would delete time they had just paid for.
-  for (const doc of flights.docs) {
-    try {
-      await db.runTransaction(async (tx) => {
-        const snap = await tx.get(doc.ref);
-        if (!snap.exists) return;
-        const flight = snap.data()!;
-        const until = flight.featuredUntil;
-        if (flight.isFeatured !== true) return;
-        if (until && until.toMillis && until.toMillis() > now.toMillis()) return;
-
-        tx.update(doc.ref, {
-          isFeatured: false,
-          featuredUntil: null,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-        clearedFlights++;
-      });
-    } catch (error) {
-      failed++;
-      logger.error('Failed to clear featured flag', { flightId: doc.id, error });
-    }
-  }
-
-  for (const doc of bids.docs) {
-    try {
-      await db.runTransaction(async (tx) => {
-        const snap = await tx.get(doc.ref);
-        if (!snap.exists) return;
-        const bid = snap.data()!;
-        const until = bid.urgencyExpiresAt;
-        if (!bid.urgencyLevel) return;
-        if (until && until.toMillis && until.toMillis() > now.toMillis()) return;
-
-        tx.update(doc.ref, { urgencyLevel: 0, urgencyExpiresAt: null });
-        clearedBids++;
-      });
-    } catch (error) {
-      failed++;
-      logger.error('Failed to clear urgency boost', { bidId: doc.id, error });
-    }
-  }
-
-  logger.info('Expired boosts', {
-    flightsScanned: flights.size,
-    bidsScanned: bids.size,
-    clearedFlights,
-    clearedBids,
-    failed,
-  });
-});
-
-/**
- * Monthly free points (blueprint §5).
- *
- * Runs daily rather than monthly on purpose. The grant is keyed by calendar
- * month, so a user who joins on the 20th gets that month's credit the next day
- * instead of waiting for the 1st, and a run that fails or is skipped is made up
- * the following day rather than lost for the month.
- *
- * `monthlyFreeCap` is a ceiling on the resulting balance, not a monthly
- * allowance: it tops a user up *to* the cap and gives nothing to anyone already
- * above it. That stops inactive accounts accruing an unbounded pile of points
- * that would sit on the books as a liability.
- *
- * Who qualifies: anyone who posted a flight or placed a bid this calendar month
- * (`lastActivityAt`, stamped by postFlight and submitBid). The credit rewards
- * taking part rather than merely holding an account.
- *
- * That rule alone would be a trap, so there is a floor. Bidding costs points, so
- * "no points unless you were active" and "no activity without points" is a loop
- * that permanently locks out anyone who sits out a month. Any user whose balance
- * has fallen below the price of a single bid is therefore topped up regardless
- * of activity — enough to come back and bid, never an income: at 50 free points
- * against a 10-point bid, the floor stops paying out until they have spent
- * almost all of it again.
- */
-export const grantMonthlyPoints = onSchedule('every day 02:00', async () => {
-  const economy = await getPointsEconomy();
-  if (economy.monthlyFree <= 0) return;
-
-  const period = currentPeriod();
-  const activeSince = Timestamp.fromDate(periodStart());
-  let granted = 0;
-  let skipped = 0;
-  let failed = 0;
-  let byFloor = 0;
-
-  // Paged so the job holds a bounded amount of memory as the user base grows.
-  let cursor: admin.firestore.QueryDocumentSnapshot | null = null;
-  for (;;) {
-    let q = db.collection('users').orderBy('__name__').limit(200);
-    if (cursor) q = q.startAfter(cursor);
-    const page = await q.get();
-    if (page.empty) break;
-
-    for (const doc of page.docs) {
-      const user = doc.data();
-      if (user.suspended === true) {
-        skipped++;
-        continue;
-      }
-
-      const balance =
-        (typeof user.pointsBalance === 'number' ? user.pointsBalance : 0) +
-        (typeof user.promoBalance === 'number' ? user.promoBalance : 0);
-
-      // Missing lastActivityAt reads as inactive rather than active: accounts
-      // that predate the field have never been stamped, and treating absence as
-      // participation would hand the credit to every dormant account.
-      const active =
-        user.lastActivityAt instanceof Timestamp &&
-        user.lastActivityAt.toMillis() >= activeSince.toMillis();
-
-      // The floor: below the price of one bid, a user cannot act at all, so
-      // withholding the credit would make the activity rule self-sealing.
-      const strandedOnZero = balance < economy.bidSubmitCost;
-
-      if (!active && !strandedOnZero) {
-        skipped++;
-        continue;
-      }
-
-      const amount = Math.min(economy.monthlyFree, economy.monthlyFreeCap - balance);
-      if (amount <= 0) {
-        skipped++;
-        continue;
-      }
-
-      try {
-        // The period-keyed entry id is what makes the daily cadence safe: the
-        // second and every later run in the same month resolves to a row that
-        // already exists and becomes a no-op.
-        const result = await postEntry({
-          entryId: entryIds.monthly(doc.id, period),
-          userId: doc.id,
-          delta: amount,
-          category: 'MONTHLY',
-          referenceType: 'NONE',
-          referenceId: null,
-          description: `Monthly free points (${period})`,
-          createdBy: 'SYSTEM',
-          toPromo: true,
-        });
-        if (result.alreadyApplied) skipped++;
-        else {
-          granted++;
-          if (!active) byFloor++;
-        }
-      } catch (error) {
-        failed++;
-        logger.error('Failed to grant monthly points', { uid: doc.id, error });
-      }
-    }
-
-    if (page.size < 200) break;
-    cursor = page.docs[page.size - 1];
-  }
-
-  logger.info('Monthly points grant complete', { period, granted, byFloor, skipped, failed });
 });
 
 // ---------------------------------------------------------------------------
@@ -1950,9 +1259,7 @@ export const withdrawBid = onCall(async (request) => {
     const check = canTransitionBid(bid.status as BidStatus, 'WITHDRAWN', 'SENDER');
     if (!check.allowed) throw new HttpsError('failed-precondition', check.reason!);
 
-    const refund = await prepareBidRefund(tx, bidId, bid, 'Bid withdrawn — hold returned');
-    tx.update(bidRef, { status: 'WITHDRAWN' satisfies BidStatus, pointsHeld: 0 });
-    if (refund) commitEntry(tx, refund);
+    tx.update(bidRef, { status: 'WITHDRAWN' satisfies BidStatus });
   });
 
   logger.info('Bid withdrawn', { bidId, uid: caller.uid });
@@ -1995,18 +1302,14 @@ export const cancelFlight = onCall(async (request) => {
       );
     }
 
-    const refunds = await prepareBulkRefunds(tx, pending.docs, 'Flight cancelled — hold returned');
-
     tx.update(flightRef, {
       status: 'CANCELLED' satisfies FlightStatus,
-      isFeatured: false,
       updatedAt: FieldValue.serverTimestamp(),
     });
-    for (const refund of refunds) {
-      tx.update(refund.ref, { status: 'DECLINED' satisfies BidStatus, pointsHeld: 0 });
-      if (refund.entry) commitEntry(tx, refund.entry);
+    for (const bidDoc of pending.docs) {
+      tx.update(bidDoc.ref, { status: 'DECLINED' satisfies BidStatus });
     }
-    return refunds.length;
+    return pending.size;
   });
 
   logger.info('Flight cancelled', { flightId, uid: caller.uid, bidsDeclined });
@@ -2363,7 +1666,7 @@ export const submitRating = onCall(async (request) => {
 
 /**
  * Settles deliveries whose dispute window closed quietly: the trip counts
- * toward both parties' records and each side earns its trip reward.
+ * toward both parties' records.
  */
 export const settleTransactions = onSchedule('every 60 minutes', async () => {
   const cutoff = Timestamp.fromMillis(Date.now() - DISPUTE_WINDOW_HOURS * 3600_000);
@@ -2376,7 +1679,6 @@ export const settleTransactions = onSchedule('every 60 minutes', async () => {
 
   if (due.empty) return;
 
-  const economy = await getPointsEconomy();
   let settled = 0;
   let failed = 0;
 
@@ -2391,41 +1693,8 @@ export const settleTransactions = onSchedule('every 60 minutes', async () => {
 
         const travelerId = deal.travelerId as string;
         const senderId = deal.senderId as string;
-        const [travelerReward, senderReward] = await Promise.all([
-          economy.tripRewardTraveler > 0
-            ? prepareEntry(tx, {
-                entryId: entryIds.tripRewardTraveler(doc.id),
-                userId: travelerId,
-                delta: economy.tripRewardTraveler,
-                category: 'TRIP_REWARD',
-                referenceType: 'TRANSACTION',
-                referenceId: doc.id,
-                description: 'Trip completed — reward',
-                createdBy: 'SYSTEM',
-                toPromo: true,
-              })
-            : null,
-          economy.deliveryRewardSender > 0
-            ? prepareEntry(tx, {
-                entryId: entryIds.tripRewardSender(doc.id),
-                userId: senderId,
-                delta: economy.deliveryRewardSender,
-                category: 'TRIP_REWARD',
-                referenceType: 'TRANSACTION',
-                referenceId: doc.id,
-                description: 'Delivery completed — reward',
-                createdBy: 'SYSTEM',
-                toPromo: true,
-              })
-            : null,
-        ]);
-
         const now = FieldValue.serverTimestamp();
         tx.update(doc.ref, { payoutStatus: 'RELEASED', closedAt: now, updatedAt: now });
-        if (travelerReward) commitEntry(tx, travelerReward);
-        if (senderReward) commitEntry(tx, senderReward);
-        // After the ledger commits, which write the same user documents: both
-        // updates apply in order within the transaction.
         tx.update(db.collection('users').doc(travelerId), {
           completedTripsAsTraveler: FieldValue.increment(1),
         });
