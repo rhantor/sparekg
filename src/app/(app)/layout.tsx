@@ -69,7 +69,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* A strip of sky behind the top of every page. Page titles sit on it,
           and the content below rises out of its clouds. */}
       <div aria-hidden className="absolute inset-x-0 top-0 h-[300px] md:h-[330px] pointer-events-none">
-        <SkyBackdrop compact />
+        <SkyBackdrop compact parallax />
       </div>
 
       <header className="sticky top-0 z-40 bg-navy/75 backdrop-blur-xl border-b border-white/10 text-white">
@@ -88,11 +88,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                    active ? 'bg-white text-navy' : 'text-white/75 hover:text-white'
+                  className={`relative px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    active ? 'text-navy' : 'text-white/75 hover:text-white hover:bg-white/10'
                   }`}
                 >
-                  {item.label}
+                  {/* The white pill glides between items. */}
+                  {active && (
+                    <motion.span
+                      layoutId="nav-pill"
+                      className="absolute inset-0 rounded-full bg-white"
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <span className="relative">{item.label}</span>
                 </Link>
               );
             })}
@@ -129,10 +137,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
         <AnimatePresence mode="wait">
           <motion.div
             key={pathname}
-            initial={{ opacity: 0, y: 16 }}
+            // No blur here: a leftover filter would trap fixed-position modals inside the page.
+            initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           >
             {children}
           </motion.div>
@@ -145,8 +154,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
           const Icon = item.icon;
           const active = isActive(item.href);
           return (
-            <Link key={item.href} href={item.href} className={`flex flex-col items-center gap-0.5 px-1.5 py-1 text-[0.65rem] font-medium ${active ? 'text-teal' : 'text-ash'}`}>
-              <Icon className="w-5 h-5" />
+            <Link key={item.href} href={item.href} className={`relative flex flex-col items-center gap-0.5 px-1.5 py-1 text-[0.65rem] font-medium ${active ? 'text-teal' : 'text-ash'}`}>
+              {active && (
+                <motion.span
+                  layoutId="tab-dot"
+                  className="absolute -top-2 h-1 w-6 rounded-full bg-teal"
+                  transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                />
+              )}
+              <Icon className={`w-5 h-5 transition-transform duration-300 ${active ? '-translate-y-0.5 scale-110' : ''}`} />
               {item.label}
             </Link>
           );

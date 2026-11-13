@@ -1,6 +1,7 @@
 import { Ban, ScanSearch, BadgeCheck, Star, Handshake, ShieldCheck } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Reveal } from '@/components/ui/Reveal';
+import { Tilt } from '@/components/ui/Interactive';
 
 const PRINCIPLES = [
   { Icon: Ban, title: 'No Illegal Items', text: 'All items must comply with airline rules and customs regulations. Prohibited items are strictly not allowed.' },
@@ -26,13 +27,15 @@ export function Trust() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-16">
           {PRINCIPLES.map(({ Icon, title, text }, i) => (
             <Reveal key={title} delay={(i % 3) * 0.08}>
-              <div className="h-full bg-white rounded-2xl border border-line shadow-soft p-7 hover:shadow-float hover:-translate-y-1 transition-all">
-                <span className="w-11 h-11 rounded-xl bg-navy/[0.04] flex items-center justify-center mb-5">
-                  <Icon className="w-5 h-5 text-teal" />
+              <Tilt max={6} radius="1rem" className="h-full">
+              <div className="group h-full bg-white rounded-2xl border border-line shadow-soft p-7 hover:shadow-float transition-shadow duration-300">
+                <span className="w-11 h-11 rounded-xl bg-navy/[0.04] flex items-center justify-center mb-5 transition-all duration-500 group-hover:bg-teal group-hover:scale-110 group-hover:-rotate-6">
+                  <Icon className="w-5 h-5 text-teal transition-colors group-hover:text-white" />
                 </span>
                 <h3 className="font-semibold text-navy mb-2">{title}</h3>
                 <p className="text-sm text-ash leading-relaxed">{text}</p>
               </div>
+              </Tilt>
             </Reveal>
           ))}
         </div>

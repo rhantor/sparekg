@@ -1,5 +1,6 @@
 import { BoardingPass, type PassFlight } from '@/components/sky/BoardingPass';
 import type { AppFlight } from '@/lib/view-models';
+import { Reveal } from '@/components/ui/Reveal';
 
 /** The boarding-pass fields, from the app's flight view model. */
 export function toPassFlight(flight: AppFlight): PassFlight {
@@ -27,12 +28,14 @@ export function toPassFlight(flight: AppFlight): PassFlight {
 /** A flight listing as a boarding pass; the traveler's own listings show status and bids. */
 export function FlightCard({ flight }: { flight: AppFlight }) {
   return (
-    <BoardingPass
-      flight={toPassFlight(flight)}
-      href={`/flights/${flight.id}`}
-      status={flight.mine ? flight.status : undefined}
-      bids={flight.mine ? flight.bids : undefined}
-      cta={flight.mine ? 'Manage' : 'Place a bid'}
-    />
+    <Reveal y={28}>
+      <BoardingPass
+        flight={toPassFlight(flight)}
+        href={`/flights/${flight.id}`}
+        status={flight.mine ? flight.status : undefined}
+        bids={flight.mine ? flight.bids : undefined}
+        cta={flight.mine ? 'Manage' : 'Place a bid'}
+      />
+    </Reveal>
   );
 }

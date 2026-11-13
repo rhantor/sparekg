@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ref, uploadBytes } from 'firebase/storage';
 import { ArrowLeft, CheckCircle2, PlusCircle, AlertCircle, ShieldAlert, Loader2, Ticket, FileText, Search } from 'lucide-react';
 import { PageHeader } from '@/components/app/PageHeader';
+import { Takeoff } from '@/components/ui/Interactive';
 import { useAuth } from '@/lib/auth-context';
 import { auth, storage } from '@/lib/firebase';
 import { cityFor, tzFor, zonedInputToUtcMs, utcMsToZonedInput } from '@/lib/airports';
@@ -206,9 +207,13 @@ export default function NewFlightPage() {
 
   if (posted) {
     return (
-      <div className="max-w-xl mx-auto text-center bg-white rounded-3xl shadow-float px-6 py-12 sm:px-10">
-        <div className="w-16 h-16 rounded-full bg-teal/10 flex items-center justify-center mx-auto mb-5">
-          <CheckCircle2 className="w-8 h-8 text-teal" />
+      <div className="max-w-xl mx-auto text-center bg-white rounded-3xl shadow-float px-6 py-12 sm:px-10 overflow-hidden">
+        <div className="flex justify-center mb-5">
+          <Takeoff>
+            <div className="w-16 h-16 rounded-full bg-teal/10 flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-teal" />
+            </div>
+          </Takeoff>
         </div>
         <h1 className="font-display text-2xl font-semibold text-navy mb-2">Flight posted</h1>
         <p className="text-ash mb-7">

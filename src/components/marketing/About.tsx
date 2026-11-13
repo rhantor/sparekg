@@ -28,8 +28,8 @@ export function About() {
                 <div className="font-display text-xl text-white">Kuala Lumpur</div>
                 <div className="text-xs text-white/45 mt-0.5">MYS · KUL</div>
               </div>
-              <div className="flex-1 h-px bg-white/20 flex items-center justify-center">
-                <Plane className="w-5 h-5 text-teal-300" />
+              <div className="relative flex-1 h-px bg-white/20 overflow-visible">
+                <Plane className="about-plane absolute top-1/2 -mt-2.5 w-5 h-5 text-teal-300 rotate-45" />
               </div>
               <div className="text-right">
                 <div className="font-display text-xl text-white">Dhaka</div>

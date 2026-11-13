@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/app/StatusBadge';
 import { colorFor } from '@/lib/view-models';
 import { counterpart, dealRole, money, nextStep, routeLabel } from '@/lib/deals';
 import type { Transaction } from '@/lib/types';
+import { Reveal } from '@/components/ui/Reveal';
 
 /** One agreed deal in a list, told from the viewer's side. */
 export function DealRow({ deal, uid }: { deal: Transaction; uid: string }) {
@@ -16,6 +17,7 @@ export function DealRow({ deal, uid }: { deal: Transaction; uid: string }) {
   const RoleIcon = role === 'sender' ? Package : Plane;
 
   return (
+    <Reveal y={16}>
     <Link
       href={`/deliveries/${deal.transactionId}`}
       className="bg-white rounded-2xl border border-line shadow-soft p-4 flex items-center gap-4 hover:shadow-float hover:-translate-y-0.5 transition-all"
@@ -46,5 +48,6 @@ export function DealRow({ deal, uid }: { deal: Transaction; uid: string }) {
       </div>
       <ArrowRight className="w-5 h-5 text-ash shrink-0 hidden sm:block" />
     </Link>
+    </Reveal>
   );
 }

@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { ArrowRight, BadgeCheck, KeyRound, Plane, Ticket } from 'lucide-react';
 import { SkyBackdrop } from '@/components/sky/SkyBackdrop';
-import { Magnetic, SplitWords } from '@/components/ui/Interactive';
+import { SplitWords } from '@/components/ui/Interactive';
 
 // WebGL only runs in the browser; the hero renders fine before it arrives.
 const Globe = dynamic(() => import('@/components/sky/Globe'), { ssr: false });
@@ -99,7 +99,6 @@ export function Hero() {
           </motion.p>
 
           <motion.div {...fade(0.85)} className="flex flex-wrap gap-3 mt-9">
-            <Magnetic>
               <Link
                 href="/#feeds"
                 className="group relative inline-flex items-center gap-2 px-7 py-4 rounded-full bg-white text-navy font-semibold shadow-float overflow-hidden"
@@ -108,8 +107,6 @@ export function Hero() {
                 <span className="relative">Find a flight</span>
                 <ArrowRight className="relative w-4 h-4 transition-transform group-hover:translate-x-1" />
               </Link>
-            </Magnetic>
-            <Magnetic>
               <Link
                 href="/signup"
                 className="group inline-flex items-center gap-2 px-7 py-4 rounded-full border border-white/35 font-semibold hover:bg-white/10 transition-colors"
@@ -117,7 +114,6 @@ export function Hero() {
                 <Plane className="w-4 h-4 transition-transform duration-500 group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:-rotate-12" />
                 {"I'm travelling"}
               </Link>
-            </Magnetic>
           </motion.div>
 
           <motion.div {...fade(1)} className="flex flex-wrap gap-x-7 gap-y-2 mt-9 text-sm text-white/70">

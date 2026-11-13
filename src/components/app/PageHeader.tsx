@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { SplitWords } from '@/components/ui/Interactive';
+import { Reveal } from '@/components/ui/Reveal';
 
 interface PageHeaderProps {
   title: string;
@@ -14,10 +16,12 @@ export function PageHeader({ title, subtitle, action }: PageHeaderProps) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3 mb-8 md:mb-10">
       <div>
-        <h1 className="font-display text-[2.6rem] md:text-5xl leading-none text-white!">{title}</h1>
-        {subtitle && <p className="text-white/75 mt-3 max-w-xl">{subtitle}</p>}
+        <h1 className="font-display text-[2.6rem] md:text-5xl leading-none text-white!">
+          <SplitWords text={title} />
+        </h1>
+        {subtitle && <Reveal delay={0.25} y={10}><p className="text-white/75 mt-3 max-w-xl">{subtitle}</p></Reveal>}
       </div>
-      {action}
+      {action && <Reveal delay={0.3} y={10}>{action}</Reveal>}
     </div>
   );
 }

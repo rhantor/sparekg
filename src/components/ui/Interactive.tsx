@@ -1,6 +1,27 @@
 'use client';
-import { useRef, type ReactNode } from 'react';
-import { motion, useMotionValue, useSpring, useReducedMotion } from 'framer-motion';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { animate, motion, useMotionValue, useSpring, useReducedMotion } from 'framer-motion';
+
+/** A number that counts up to its value; anything non-numeric is shown as is. */
+export function CountUp({ value, className = '' }: { value: string; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const reduce = useReducedMotion();
+
+  useEffect(() => {
+    const m = /^(\d+(?:\.\d+)?)$/.exec(value);
+    const el = ref.current;
+    if (!m || reduce || !el) return;
+    const decimals = (m[1].split('.')[1] ?? '').length;
+    const controls = animate(0, parseFloat(m[1]), {
+      duration: 1.3,
+      ease: [0.22, 1, 0.36, 1],
+      onUpdate: (v) => { el.textContent = v.toFixed(decimals); },
+    });
+    return () => controls.stop();
+  }, [value, reduce]);
+
+  return <span ref={ref} className={className}>{value}</span>;
+}
 
 const finePointer = () =>
   typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -68,6 +89,58 @@ export function Tilt({ children, max = 8, className = '', radius = '1.5rem' }: {
           style={{ borderRadius: radius, background: 'radial-gradient(420px circle at var(--shine-x,50%) var(--shine-y,50%), rgba(255,255,255,0.55), transparent 45%)' }}
         />
       </motion.div>
+    </div>
+  );
+}
+
+/**
+ * A celebration for a finished step: a burst of light from the icon and a
+ * small plane taking off across it. Place inside a `relative` container.
+ */
+export function Takeoff({ children }: { children: ReactNode }) {
+  const reduce = useReducedMotion();
+  const COLORS = ['#ffc27a', '#1f6feb', '#9cc3ff', '#12805c', '#ff9f6b'];
+  return (
+    <div className="relative inline-flex items-center justify-center">
+      {!reduce &&
+        Array.from({ length: 18 }, (_, i) => {
+          const a = (i / 18) * Math.PI * 2;
+          const d = 70 + (i % 3) * 22;
+          return (
+            <motion.span
+              key={i}
+              aria-hidden
+              className="absolute w-2 h-2 rounded-full"
+              style={{ background: COLORS[i % COLORS.length] }}
+              initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
+              animate={{ x: Math.cos(a) * d, y: Math.sin(a) * d, scale: [0, 1.2, 0.4], opacity: [1, 1, 0] }}
+              transition={{ duration: 1.1, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+            />
+          );
+        })}
+      <motion.div
+        initial={reduce ? false : { scale: 0, rotate: -30 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 14 }}
+      >
+        {children}
+      </motion.div>
+      {!reduce && (
+        <motion.svg
+          aria-hidden
+          viewBox="0 0 24 24"
+          className="absolute w-6 h-6 text-navy"
+          initial={{ x: -120, y: 50, opacity: 0, rotate: -20 }}
+          animate={{ x: 160, y: -90, opacity: [0, 1, 1, 0], rotate: -28 }}
+          transition={{ duration: 1.6, delay: 0.4, ease: 'easeIn' }}
+        >
+          <path
+            fill="currentColor"
+            d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"
+            transform="rotate(90 12 12)"
+          />
+        </motion.svg>
+      )}
     </div>
   );
 }

@@ -516,3 +516,115 @@ select.input option {
   /* Select / option dropdown */
   select option { background: #f1f5f9 !important; color: #0f172a !important; }
 }
+
+/* ============================================================
+   INTERACTION LAYER — see components/ui/InteractionLayer.tsx
+   Scoped to .site; the admin console is untouched.
+   ============================================================ */
+
+/* Cursor: a trailing ring and a precise dot, inverted against whatever is under them. */
+.fx-cursor-ring,
+.fx-cursor-dot {
+  position: fixed;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 9999;
+  border-radius: 9999px;
+  mix-blend-mode: difference;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.fx-cursor-ring {
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border: 1.5px solid #fff;
+  transition: opacity 0.25s ease, width 0.3s cubic-bezier(0.22, 1, 0.36, 1), height 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    margin 0.3s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.3s ease, border-radius 0.3s ease;
+}
+.fx-cursor-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: #fff; }
+.fx-cursor-ring[data-on='true'], .fx-cursor-dot[data-on='true'] { opacity: 1; }
+.fx-cursor-ring[data-hover='true'] {
+  width: 60px; height: 60px; margin: -30px 0 0 -30px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.fx-cursor-ring[data-text='true'] { width: 4px; height: 30px; margin: -15px 0 0 -2px; border-radius: 2px; background: #fff; }
+.fx-cursor-ring[data-down='true'] { width: 24px; height: 24px; margin: -12px 0 0 -12px; }
+
+/* Magnetic pull is set inline (translate); this makes it glide. */
+.site :is(button, a, [role='button']) {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, translate, scale;
+  transition-duration: var(--tw-duration, 0.25s);
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.site :is(button, [role='button'], a.rounded-full, a.rounded-xl):not(:disabled):active { scale: 0.96; }
+
+/* Ripple from the point of press. */
+.fx-ripple {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: currentColor;
+  opacity: 0.22;
+  transform: translate(-50%, -50%) scale(0);
+  animation: fx-ripple 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes fx-ripple { to { transform: translate(-50%, -50%) scale(1); opacity: 0; } }
+
+/* Cards light up where the cursor is. */
+.site .fx-spot {
+  background-image: radial-gradient(460px circle at var(--sx) var(--sy), rgba(31, 111, 235, 0.075), transparent 45%);
+}
+.site .fx-spot.border { border-color: rgba(31, 111, 235, 0.28); }
+
+/* Fields glow when focused. */
+.site :is(input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']), textarea, select) {
+  transition: border-color 0.2s ease, box-shadow 0.3s ease, background-color 0.2s ease;
+}
+.site :is(input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']), textarea, select):focus {
+  outline: none;
+  border-color: #1f6feb;
+  background-color: #fff;
+  box-shadow: 0 0 0 4px rgba(31, 111, 235, 0.13), 0 12px 28px -14px rgba(31, 111, 235, 0.55);
+}
+.site :is(input[type='checkbox'], input[type='radio'], input[type='range']) { accent-color: #1f6feb; }
+.site ::selection { background: #ffd9a8; color: #071a36; }
+
+@layer base {
+  /* Solid buttons: a band of light sweeps across on hover. Kept in the base
+     layer so positioning utilities (absolute, fixed) still win. */
+  .site :is(button, a):is(.bg-navy, .bg-teal, .bg-azure, .bg-night, .bg-ocean, .bg-leaf, .bg-navy-700) {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .site :is(button, a):is(.bg-navy, .bg-teal, .bg-azure, .bg-night, .bg-ocean, .bg-leaf, .bg-navy-700)::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.25) 50%, transparent 70%);
+    translate: -120% 0;
+    transition: translate 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .site :is(button, a):is(.bg-navy, .bg-teal, .bg-azure, .bg-night, .bg-ocean, .bg-leaf, .bg-navy-700):not(:disabled):hover::after {
+    translate: 120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-cursor-ring, .fx-cursor-dot, .fx-ripple { display: none; }
+  .site :is(button, a)::after { transition: none !important; }
+}
+
+/* The plane on the About card flies the route on a loop. */
+@keyframes about-plane {
+  0% { left: 0; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { left: calc(100% - 1.25rem); opacity: 0; }
+}
+.about-plane { animation: about-plane 4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+@media (prefers-reduced-motion: reduce) { .about-plane { animation: none; left: calc(50% - 0.625rem); } }

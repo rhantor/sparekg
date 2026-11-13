@@ -4,6 +4,7 @@ import { Inter, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/lib/theme-context";
+import { InteractionLayer } from "@/components/ui/InteractionLayer";
 
 // Inter for body/UI everywhere; Instrument Serif for headlines; JetBrains Mono
 // for the boarding-pass details (airport codes, times, prices).
@@ -68,6 +69,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AuthProvider>
             {children}
           </AuthProvider>
+          <InteractionLayer />
         </ThemeProvider>
       </body>
     </html>

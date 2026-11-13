@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Plane, Package, Users, Check, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Reveal } from '@/components/ui/Reveal';
+import { Takeoff } from '@/components/ui/Interactive';
 import { joinBeta } from '@/app/(marketing)/actions';
 import { BETA_ROUTES, type BetaRole, type BetaSignupInput } from '@/lib/beta';
 
@@ -55,9 +56,13 @@ export function Beta() {
         </Reveal>
 
         {submitted ? (
-          <div className="mt-12 bg-white rounded-3xl shadow-float p-12 text-center">
-            <div className="w-14 h-14 rounded-full bg-teal/10 flex items-center justify-center mx-auto mb-5">
-              <Check className="w-7 h-7 text-teal" />
+          <div className="mt-12 bg-white rounded-3xl shadow-float p-12 text-center overflow-hidden">
+            <div className="flex justify-center mb-5">
+              <Takeoff>
+                <div className="w-14 h-14 rounded-full bg-teal/10 flex items-center justify-center">
+                  <Check className="w-7 h-7 text-teal" />
+                </div>
+              </Takeoff>
             </div>
             <h3 className="font-display text-2xl text-navy mb-2">You&apos;re on the list</h3>
             <p className="text-ash">

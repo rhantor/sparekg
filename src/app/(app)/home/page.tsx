@@ -10,6 +10,8 @@ import { useGetUserQuery, useMyFlightsQuery, useMyBidsQuery, useMyDealsQuery } f
 import { toAppFlight, toAppBid } from '@/lib/view-models';
 import { isActiveDeal } from '@/lib/deals';
 import { DealRow } from '@/components/app/DealRow';
+import { Reveal } from '@/components/ui/Reveal';
+import { CountUp } from '@/components/ui/Interactive';
 
 const ACTIONS = [
   { href: '/flights/new', icon: PlusCircle, title: 'Post a flight', desc: 'List your spare luggage capacity' },
@@ -76,36 +78,40 @@ export default function HomePage() {
 
       {/* stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map((s) => {
+        {stats.map((s, i) => {
           const Icon = s.icon;
           return (
-            <div key={s.label} className="bg-white rounded-2xl border border-line shadow-soft p-5">
-              <span className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${s.tint}`}>
-                <Icon className="w-5 h-5" />
-              </span>
-              <div className="font-display text-2xl font-semibold text-navy">{s.value}</div>
-              <div className="text-sm text-navy mt-0.5">{s.label}</div>
-              <div className="text-xs text-ash">{s.sub}</div>
-            </div>
+            <Reveal key={s.label} delay={i * 0.07} y={24}>
+              <div className="group h-full bg-white rounded-2xl border border-line shadow-soft p-5 hover:shadow-float hover:-translate-y-1 transition-all duration-300">
+                <span className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-6 ${s.tint}`}>
+                  <Icon className="w-5 h-5" />
+                </span>
+                <div className="font-display text-3xl text-navy"><CountUp value={s.value} /></div>
+                <div className="text-sm text-navy mt-0.5">{s.label}</div>
+                <div className="text-xs text-ash">{s.sub}</div>
+              </div>
+            </Reveal>
           );
         })}
       </div>
 
       {/* quick actions */}
       <div className="grid sm:grid-cols-3 gap-4 mb-9">
-        {ACTIONS.map((a) => {
+        {ACTIONS.map((a, i) => {
           const Icon = a.icon;
           return (
-            <Link key={a.href} href={a.href} className="group bg-white rounded-2xl border border-line shadow-soft p-5 hover:shadow-float hover:-translate-y-1 transition-all">
+            <Reveal key={a.href} delay={0.25 + i * 0.07} y={24}>
+            <Link href={a.href} className="group block h-full bg-white rounded-2xl border border-line shadow-soft p-5 hover:shadow-float hover:-translate-y-1 transition-all duration-300">
               <div className="flex items-center justify-between mb-3">
-                <span className="w-10 h-10 rounded-xl bg-navy/[0.05] flex items-center justify-center">
-                  <Icon className="w-5 h-5 text-teal" />
+                <span className="w-10 h-10 rounded-xl bg-navy/[0.05] flex items-center justify-center transition-all duration-500 group-hover:bg-teal group-hover:rotate-[-8deg] group-hover:scale-110">
+                  <Icon className="w-5 h-5 text-teal transition-colors group-hover:text-white" />
                 </span>
                 <ArrowRight className="w-4 h-4 text-ash group-hover:text-teal group-hover:translate-x-0.5 transition-all" />
               </div>
               <div className="font-semibold text-navy">{a.title}</div>
               <div className="text-sm text-ash">{a.desc}</div>
             </Link>
+            </Reveal>
           );
         })}
       </div>
