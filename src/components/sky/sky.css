@@ -1,0 +1,113 @@
+/* "Above the clouds" — shared styles for the sky components.
+   Everything is prefixed sky- and only applies inside a .sky wrapper or on
+   the sky components themselves, so existing screens are untouched. */
+
+.sky {
+  /* The theme resolves these on :root, above where next/font sets the font
+     variables, so it only ever sees the fallback. Re-declare them here, where
+     the variables exist, for everything inside the wrapper. */
+  --font-flight: var(--font-instrument), Georgia, 'Times New Roman', serif;
+  --font-code: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  color: var(--color-ink);
+  background: var(--color-cloud);
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Cloud bands: two copies side by side, sliding one copy-width ---- */
+@keyframes sky-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+.sky-cloud {
+  position: absolute;
+  left: 0;
+  width: 200%;
+  display: flex;
+  will-change: transform;
+  animation: sky-drift linear infinite;
+  pointer-events: none;
+}
+.sky-cloud svg {
+  flex: none;
+  width: 50%;
+  display: block;
+}
+
+/* ---- A card that hovers, like something held at altitude ---- */
+@keyframes sky-float {
+  0%, 100% { transform: translateY(0) rotate(-2.5deg); }
+  50% { transform: translateY(-12px) rotate(-1.5deg); }
+}
+.sky-float {
+  animation: sky-float 8s ease-in-out infinite;
+}
+
+/* ---- Boarding pass ----
+   The shadow lives on the wrapper: a mask on the pass itself would clip it. */
+.sky-pass-shadow {
+  filter: drop-shadow(0 2px 3px rgba(7, 26, 54, 0.05)) drop-shadow(0 16px 32px rgba(7, 26, 54, 0.09));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), filter 0.35s ease;
+}
+.sky-pass-shadow.sky-pass-hover:hover {
+  transform: translateY(-5px);
+  filter: drop-shadow(0 4px 6px rgba(7, 26, 54, 0.06)) drop-shadow(0 26px 44px rgba(7, 26, 54, 0.14));
+}
+.sky-pass {
+  --stub: 176px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  background: #fff;
+  border-radius: 22px;
+  overflow: hidden;
+}
+.sky-pass-stub {
+  border-top: 2px dashed var(--color-haze);
+}
+@media (min-width: 640px) {
+  .sky-pass {
+    grid-template-columns: minmax(0, 1fr) var(--stub);
+    /* Two punched notches where the stub tears off. */
+    -webkit-mask-image:
+      radial-gradient(circle 11px at calc(100% - var(--stub)) 0, transparent 10.5px, #000 11px),
+      radial-gradient(circle 11px at calc(100% - var(--stub)) 100%, transparent 10.5px, #000 11px);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      radial-gradient(circle 11px at calc(100% - var(--stub)) 0, transparent 10.5px, #000 11px),
+      radial-gradient(circle 11px at calc(100% - var(--stub)) 100%, transparent 10.5px, #000 11px);
+    mask-composite: intersect;
+  }
+  .sky-pass-stub {
+    border-top: 0;
+    border-left: 2px dashed var(--color-haze);
+  }
+}
+
+/* Decorative barcode, drawn in the current text colour. */
+.sky-barcode {
+  height: 40px;
+  background: repeating-linear-gradient(
+    90deg,
+    currentColor 0 2px, transparent 2px 4px,
+    currentColor 4px 5px, transparent 5px 9px,
+    currentColor 9px 12px, transparent 12px 14px,
+    currentColor 14px 15px, transparent 15px 17px
+  );
+}
+
+/* Departure board rows flip in on a shared perspective. */
+.sky-board {
+  perspective: 900px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-cloud,
+  .sky-float {
+    animation: none;
+  }
+  .sky-pass-shadow {
+    transition: none;
+  }
+}

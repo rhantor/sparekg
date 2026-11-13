@@ -56,6 +56,25 @@
   /* ---- Refined light shadows (public site) ---- */
   --shadow-soft: 0 1px 2px rgba(11, 29, 51, 0.04), 0 6px 20px rgba(11, 29, 51, 0.06);
   --shadow-float: 0 12px 40px rgba(11, 29, 51, 0.12);
+
+  /* ---- "Above the clouds" direction (design preview; additive) ----
+     Night sky at altitude down to a warm horizon, on cool cloud-white. */
+  --color-night: #071a36;       /* sky at altitude — dark panels */
+  --color-night-800: #0c2a55;
+  --color-azure: #1f6feb;       /* primary accent — daylight sky */
+  --color-azure-600: #1858c9;
+  --color-azure-50: #eaf2fe;
+  --color-horizon: #f5a25d;     /* sunrise — sparing highlights */
+  --color-horizon-50: #fff1e2;
+  --color-cloud: #f4f7fb;       /* page background */
+  --color-haze: #dde6f1;        /* cool hairline */
+
+  /* Fallbacks inside var() so pages that do not load these fonts still get a
+     valid font-family rather than an invalid declaration. */
+  --font-flight: var(--font-instrument, Georgia), 'Times New Roman', serif;
+  --font-code: var(--font-jetbrains, ui-monospace), SFMono-Regular, Menlo, monospace;
+
+  --shadow-lift: 0 2px 4px rgba(7, 26, 54, 0.04), 0 18px 48px rgba(7, 26, 54, 0.1);
 }
 
 /* ============================================================
