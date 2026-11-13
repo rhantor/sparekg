@@ -7,7 +7,7 @@ import { useEffect, useRef } from 'react';
  * `.site`, so the admin console is untouched.
  *
  *  - Cursor: a ring that trails the pointer and swells over anything clickable.
- *  - Magnetic: solid pill buttons lean towards the cursor (opt in or out with
+ *  - Magnetic: solid or outlined rounded buttons lean towards the cursor (opt in or out with
  *    data-magnetic / data-magnetic="off").
  *  - Spotlight: white cards light up softly under the cursor.
  *  - Ripple: a press ripples out from where the button was hit.
@@ -49,7 +49,7 @@ export function InteractionLayer() {
       const s = getComputedStyle(el);
       const ok =
         r.width <= 320 && r.height <= 64 &&
-        parseFloat(s.borderTopLeftRadius) >= r.height / 2 - 1 &&
+        parseFloat(s.borderTopLeftRadius) >= 8 &&
         (!transparent(s.backgroundColor) || s.borderTopWidth !== '0px') &&
         !el.closest('nav');
       magneticCache.set(el, ok);
