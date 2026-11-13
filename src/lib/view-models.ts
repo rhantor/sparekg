@@ -8,7 +8,7 @@
  */
 
 import type { Bid, Flight } from './types';
-import { cityFor, tzFor, formatAirportTime } from './airports';
+import { cityFor, tzFor, formatAirportTime, formatAirportClock } from './airports';
 
 export type FlightStatus =
   | 'LIVE' | 'LOCKED' | 'IN_TRANSIT' | 'COMPLETED' | 'DRAFT' | 'CANCELLED' | 'EXPIRED';
@@ -34,6 +34,13 @@ export interface AppFlight {
   /** Arrival in the destination airport's local time. */
   arrivalTime: string;
   airline: string;
+  flightNumber: string;
+  /** Clock time at the origin airport, "14:30". */
+  departClock: string;
+  /** Clock time at the destination airport. */
+  arriveClock: string;
+  /** Staff have checked the traveler's ticket against the listing. */
+  ticketVerified: boolean;
   kgTotal: number;
   kgLeft: number;
   pricePerKg: number;
@@ -123,6 +130,10 @@ export function toAppFlight(flight: Flight, currentUid?: string): AppFlight {
     departureTime: formatAirportTime(flight.departureAt, flight.originAirport),
     arrivalTime: formatAirportTime(flight.arrivalAt, flight.destinationAirport),
     airline: flight.airline,
+    flightNumber: flight.flightNumber ?? '',
+    departClock: formatAirportClock(flight.departureAt, flight.originAirport),
+    arriveClock: formatAirportClock(flight.arrivalAt, flight.destinationAirport),
+    ticketVerified: flight.ticketStatus === 'VERIFIED',
     kgTotal: flight.totalKgAvailable,
     kgLeft: flight.kgRemaining,
     // Fixed-price listings have no per-kg rate; show the implied rate so the

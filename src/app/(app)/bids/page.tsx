@@ -13,12 +13,31 @@ import {
   useAcceptBidMutation,
   useDeclineBidMutation,
   useWithdrawBidMutation,
+  useGetFlightQuery,
 } from '@/lib/store/api';
 import { toAppBid, type AppBid } from '@/lib/view-models';
 import type { Bid } from '@/lib/types';
 
 /** Bid states that came out of an agreement — they have a delivery page. */
 const DEAL_STATUSES = new Set(['AGREED', 'HANDED_OVER', 'DELIVERED', 'DISPUTED', 'RESOLVED']);
+
+/**
+ * Bids carry no copy of their flight, so each row reads it (RTK Query caches
+ * and shares these) for the route, date and — for a sender — the traveler.
+ */
+function BidRowWithFlight({ raw, tab, ...rest }: { raw: Bid; tab: 'sender' | 'traveler' } & Omit<RowProps, 'bid' | 'asTraveler'>) {
+  const { data: flight } = useGetFlightQuery(raw.flightId);
+  return <BidRow bid={toAppBid(raw, tab, flight)} asTraveler={tab === 'traveler'} {...rest} />;
+}
+
+interface RowProps {
+  bid: AppBid;
+  asTraveler: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+  onWithdraw: () => void;
+  busy: boolean;
+}
 
 function BidRow({
   bid,
@@ -27,14 +46,7 @@ function BidRow({
   onDecline,
   onWithdraw,
   busy,
-}: {
-  bid: AppBid;
-  asTraveler: boolean;
-  onAccept: () => void;
-  onDecline: () => void;
-  onWithdraw: () => void;
-  busy: boolean;
-}) {
+}: RowProps) {
   const pending = bid.status === 'PENDING';
   const isDeal = DEAL_STATUSES.has(bid.status);
 
@@ -114,12 +126,12 @@ export default function BidsPage() {
 
 
   const active = tab === 'sender' ? asSender : asTraveler;
-  const list: AppBid[] = ((active.data ?? []) as Bid[]).map((b) => toAppBid(b, tab));
+  const list = (active.data ?? []) as Bid[];
 
-  async function respond(action: 'accept' | 'decline' | 'withdraw', bid: AppBid) {
+  async function respond(action: 'accept' | 'decline' | 'withdraw', bid: Bid) {
     setError(null);
     try {
-      const args = { bidId: bid.id, flightId: bid.flightId };
+      const args = { bidId: bid.bidId, flightId: bid.flightId };
       if (action === 'accept') {
         const { transactionId } = await acceptBid(args).unwrap();
         // The deal page is where the next steps (contact, handover) live.
@@ -142,7 +154,7 @@ export default function BidsPage() {
         <button
           onClick={() => setTab('sender')}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-            tab === 'sender' ? 'bg-teal text-white' : 'text-ash hover:text-navy'
+            tab === 'sender' ? 'bg-navy text-white' : 'text-ash hover:text-navy'
           }`}
         >
           <Package className="w-4 h-4" /> As sender
@@ -150,7 +162,7 @@ export default function BidsPage() {
         <button
           onClick={() => setTab('traveler')}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-            tab === 'traveler' ? 'bg-ocean text-white' : 'text-ash hover:text-navy'
+            tab === 'traveler' ? 'bg-navy text-white' : 'text-ash hover:text-navy'
           }`}
         >
           <Plane className="w-4 h-4" /> As traveler
@@ -179,10 +191,10 @@ export default function BidsPage() {
       ) : list.length > 0 ? (
         <div className="space-y-3">
           {list.map((b) => (
-            <BidRow
-              key={b.id}
-              bid={b}
-              asTraveler={tab === 'traveler'}
+            <BidRowWithFlight
+              key={b.bidId}
+              raw={b}
+              tab={tab}
               busy={busy}
               onAccept={() => respond('accept', b)}
               onDecline={() => respond('decline', b)}

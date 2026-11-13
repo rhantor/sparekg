@@ -6,6 +6,7 @@ import {
   MessageCircle, Package, Phone, Plane, Scale, ShieldCheck, Star, Wallet,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { FlightArc } from '@/components/sky/FlightArc';
 import { StatusBadge } from '@/components/app/StatusBadge';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -28,6 +29,20 @@ import type { Dispute, Transaction } from '@/lib/types';
 /** Readable server message, or a fallback — callables write theirs for end users. */
 function messageOf(err: unknown, fallback: string): string {
   return (err as { message?: string })?.message ?? fallback;
+}
+
+/** How far along the route the plane is drawn for each deal state. */
+function journeyProgress(status: Transaction['status']): number {
+  switch (status) {
+    case 'HANDED_OVER':
+    case 'DISPUTED':
+      return 0.5;
+    case 'DELIVERED':
+    case 'RESOLVED':
+      return 1;
+    default:
+      return 0.06;
+  }
 }
 
 function when(iso: string | null | undefined): string {
@@ -62,7 +77,7 @@ export default function DeliveryPage({ params }: { params: Promise<{ id: string 
 
   if (isError || !deal || !role) {
     return (
-      <div className="text-center py-20">
+      <div className="max-w-md mx-auto text-center bg-white rounded-3xl shadow-float px-6 py-12">
         <AlertCircle className="w-6 h-6 text-ash mx-auto mb-3" />
         <p className="text-ash">
           {error?.code === 'not-found' ? 'Delivery not found.' : 'You don’t have access to this delivery.'}
@@ -80,23 +95,39 @@ export default function DeliveryPage({ params }: { params: Promise<{ id: string 
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link href="/deliveries" className="inline-flex items-center gap-1.5 text-sm text-ash hover:text-navy mb-5 transition-colors">
+      <Link href="/deliveries" className="inline-flex items-center gap-1.5 text-sm text-white/80 hover:text-white mb-5 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Back to deliveries
       </Link>
 
-      <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-ash mb-1">
-            {role === 'sender' ? 'Your parcel' : 'You are carrying'}
+      {/* Where the parcel is, drawn as where the plane is on the route. */}
+      <div className="relative overflow-hidden rounded-3xl bg-navy text-white p-6 sm:p-8 mb-6 shadow-float">
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-90"
+          style={{ background: 'radial-gradient(120% 90% at 85% 120%, rgba(255,190,125,0.35) 0%, rgba(31,111,235,0.25) 40%, transparent 70%)' }}
+        />
+        <div className="relative">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="font-code text-[0.68rem] uppercase tracking-[0.2em] text-white/60">
+                {role === 'sender' ? 'Your parcel' : 'You are carrying'}
+              </div>
+              <h1 className="font-display text-3xl md:text-4xl mt-1.5 text-white!">{routeLabel(deal)}</h1>
+              <p className="text-sm text-white/70 mt-1">
+                {routeCities(deal)} · {deal.flight.airline} {deal.flight.flightNumber} · departs {departureLabel(deal)}
+              </p>
+            </div>
+            {/* Badge colours are tuned for white cards; give it one here. */}
+            <span className="rounded-full bg-white">
+              <StatusBadge status={deal.status} />
+            </span>
           </div>
-          <h1 className="font-display text-2xl md:text-[1.7rem] font-semibold text-navy">
-            {routeLabel(deal)}
-          </h1>
-          <p className="text-sm text-ash mt-1">
-            {routeCities(deal)} · {deal.flight.airline} {deal.flight.flightNumber} · departs {departureLabel(deal)}
-          </p>
+          <FlightArc tone="dark" progress={journeyProgress(deal.status)} className="w-full mt-4 max-h-40" />
+          <div className="flex justify-between font-code text-xs uppercase tracking-[0.18em] text-white/70 -mt-2">
+            <span>{deal.flight.originAirport}</span>
+            <span>{deal.flight.destinationAirport}</span>
+          </div>
         </div>
-        <StatusBadge status={deal.status} />
       </div>
 
       <div className="grid lg:grid-cols-[1.4fr_1fr] gap-6">

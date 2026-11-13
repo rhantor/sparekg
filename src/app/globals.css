@@ -25,37 +25,42 @@
   --color-danger: #ef4444;
   --color-info: #3b82f6;
 
-  /* ---- Public / user-site palette (premium travel brand) ----
-     Deep navy + teal primary + ocean-blue secondary on warm neutrals. */
-  --color-navy: #0b1d33;        /* deep navy — dark panels, headings */
-  --color-navy-900: #071524;    /* deepest navy for gradients */
-  --color-navy-700: #14304f;
+  /* ---- Public / user-site palette: "above the clouds" ----
+     Night sky at altitude, daylight-blue accent, sunrise highlights, on
+     cool cloud-white. The old token names are kept and remapped, so every
+     screen built on them moved to the new look at once:
+     navy → night, teal → azure (daylight sky), sand → cloud, line → haze. */
+  --color-navy: #071a36;        /* night sky — dark panels, headings */
+  --color-navy-900: #041127;
+  --color-navy-700: #0c2a55;
 
-  --color-teal: #0d9488;        /* primary brand accent */
-  --color-teal-500: #14b8a6;
-  --color-teal-700: #0f766e;
+  --color-teal: #1f6feb;        /* primary accent — daylight sky */
+  --color-teal-300: #9cc3ff;    /* accent on dark panels */
+  --color-teal-400: #6aa6ff;
+  --color-teal-500: #4c8ff2;
+  --color-teal-700: #1858c9;
 
-  --color-ocean: #2563eb;       /* secondary (traveler side) */
-  --color-ocean-700: #1d4ed8;
+  --color-ocean: #0c2a55;       /* secondary (traveler side) — deeper sky */
+  --color-ocean-700: #071a36;
 
-  --color-leaf: #15803d;        /* success / live */
-  --color-gold: #f59e0b;        /* rating stars only */
+  --color-leaf: #12805c;        /* success / live */
+  --color-gold: #f5a25d;        /* sunrise — ratings and sparing highlights */
 
-  --color-ink: #18222e;         /* body text */
-  --color-ash: #5b6471;         /* muted text (warm slate) */
-  --color-sand: #f7f5f1;        /* warm section background */
+  --color-ink: #142033;         /* body text */
+  --color-ash: #5a687c;         /* muted text (cool slate) */
+  --color-sand: #f4f7fb;        /* page background — cloud */
   --color-paper: #ffffff;       /* cards */
-  --color-line: #e7e3da;        /* warm hairline border */
+  --color-line: #dde6f1;        /* cool hairline border */
 
   /* ---- Fonts ---- */
-  /* Admin default (Inter); display = Space Grotesk; body = Inter (public site) */
+  /* Admin default (Inter); display = Instrument Serif; body = Inter (public site) */
   --font-sans: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
-  --font-display: var(--font-space-grotesk), 'Space Grotesk', system-ui, sans-serif;
+  --font-display: var(--font-instrument), Georgia, 'Times New Roman', serif;
   --font-body: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
 
   /* ---- Refined light shadows (public site) ---- */
-  --shadow-soft: 0 1px 2px rgba(11, 29, 51, 0.04), 0 6px 20px rgba(11, 29, 51, 0.06);
-  --shadow-float: 0 12px 40px rgba(11, 29, 51, 0.12);
+  --shadow-soft: 0 2px 4px rgba(7, 26, 54, 0.04), 0 14px 36px rgba(7, 26, 54, 0.08);
+  --shadow-float: 0 4px 8px rgba(7, 26, 54, 0.05), 0 26px 56px rgba(7, 26, 54, 0.14);
 
   /* ---- "Above the clouds" direction (design preview; additive) ----
      Night sky at altitude down to a warm horizon, on cool cloud-white. */
@@ -88,13 +93,18 @@
   .site {
     font-family: var(--font-body);
     color: var(--color-ink);
-    background: #fff;
+    background: var(--color-sand);
     letter-spacing: -0.011em;
+    -webkit-font-smoothing: antialiased;
   }
+  /* Instrument Serif ships in one weight; bolding it synthesises a smeared
+     glyph, so headings stay at 400 and get presence from size instead. */
   .site h1, .site h2, .site h3, .site .font-display {
     font-family: var(--font-display);
-    font-weight: 600;
-    letter-spacing: -0.025em;
+    /* !important inside a layer outranks the font-semibold utilities many
+       older headings still carry. */
+    font-weight: 400 !important;
+    letter-spacing: -0.01em;
     color: var(--color-navy);
   }
 }

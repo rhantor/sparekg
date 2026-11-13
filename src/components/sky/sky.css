@@ -66,7 +66,12 @@
 .sky-pass-stub {
   border-top: 2px dashed var(--color-haze);
 }
-@media (min-width: 640px) {
+/* The stub tears off to the side once the pass itself is wide enough — judged
+   by the pass's own width, so a narrow grid column keeps the stacked layout. */
+.sky-pass-shadow {
+  container-type: inline-size;
+}
+@container (min-width: 28rem) {
   .sky-pass {
     grid-template-columns: minmax(0, 1fr) var(--stub);
     /* Two punched notches where the stub tears off. */

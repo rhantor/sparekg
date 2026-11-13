@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import type { PassFlight } from './BoardingPass';
@@ -10,6 +11,7 @@ import './sky.css';
  * the way a split-flap board settles.
  */
 export function DepartureBoard({ flights, title = 'Departures' }: { flights: PassFlight[]; title?: string }) {
+  // Each row opens its flight; signed-out visitors are sent to sign in first.
   const reduce = useReducedMotion();
 
   return (
@@ -44,12 +46,12 @@ export function DepartureBoard({ flights, title = 'Departures' }: { flights: Pas
             style={{ transformOrigin: 'top' }}
             className="border-t border-white/[0.07]"
           >
-            <a
-              href="#"
+            <Link
+              href={`/flights/${f.id}`}
               className="group grid grid-cols-[4.5rem_1fr_auto] sm:grid-cols-[5.5rem_5.5rem_1fr_1fr_5rem_5.5rem_2rem] gap-4 items-center px-5 sm:px-7 py-4 font-code text-sm hover:bg-white/[0.05] transition-colors"
             >
               <span className="text-horizon">{f.date}</span>
-              <span className="hidden sm:block text-white/70">{f.flightNo}</span>
+              <span className="hidden sm:block text-white/70">{f.flightNo || '—'}</span>
               <span className="font-semibold tracking-wide">
                 {f.from} <span className="text-white/40">→</span> {f.to}
                 <span className="sm:hidden block text-xs font-normal text-white/50 mt-0.5">
@@ -60,7 +62,7 @@ export function DepartureBoard({ flights, title = 'Departures' }: { flights: Pas
               <span className="hidden sm:block text-right">{f.kgLeft} kg</span>
               <span className="hidden sm:block text-right">RM {f.pricePerKg}</span>
               <ArrowRight className="w-4 h-4 text-white/40 justify-self-end group-hover:text-white group-hover:translate-x-1 transition-all" />
-            </a>
+            </Link>
           </motion.li>
         ))}
       </ul>

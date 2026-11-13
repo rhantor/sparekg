@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Plane, Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { AuthShell } from '@/components/sky/AuthShell';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -42,17 +43,11 @@ export default function LoginPage() {
   const inputCls = 'w-full pl-11 pr-3 py-2.5 rounded-lg border border-line bg-white text-navy text-sm outline-none focus:border-teal placeholder:text-ash/60';
 
   return (
-    <div className="site min-h-screen flex items-center justify-center bg-gradient-to-b from-sand to-white px-4">
-      <div className="w-full max-w-[400px]">
-        <div className="text-center mb-7">
-          <Link href="/" className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-navy mb-4">
-            <Plane className="w-7 h-7 text-teal-500" />
-          </Link>
-          <h1 className="font-display text-2xl font-semibold text-navy">Welcome back</h1>
-          <p className="text-sm text-ash mt-1">Sign in to your SpareKG account</p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-line shadow-soft p-6 sm:p-7">
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to your SpareKG account"
+      footer={<>New to SpareKG? <Link href="/signup" className="font-semibold text-teal hover:text-teal-700">Create an account</Link></>}
+    >
           <button
             onClick={handleGoogle}
             disabled={googleLoading}
@@ -98,13 +93,7 @@ export default function LoginPage() {
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
-        </div>
-
-        <p className="text-center text-sm text-ash mt-6">
-          New to SpareKG? <Link href="/signup" className="font-semibold text-teal hover:text-teal-700">Create an account</Link>
-        </p>
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 

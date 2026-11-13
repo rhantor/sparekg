@@ -3,7 +3,7 @@ import { CheckCircle2 } from 'lucide-react';
 
 export default function KycSuccessPage() {
   return (
-    <div className="max-w-xl mx-auto text-center py-16">
+    <div className="max-w-xl mx-auto text-center bg-white rounded-3xl shadow-float px-6 py-12 sm:px-10">
       <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-teal/10 mb-6">
         <CheckCircle2 className="w-8 h-8 text-teal" />
       </div>

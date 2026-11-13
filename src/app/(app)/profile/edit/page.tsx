@@ -112,7 +112,7 @@ export default function EditProfilePage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <Link href="/profile" className="inline-flex items-center gap-1.5 text-sm text-ash hover:text-navy mb-5 transition-colors">
+      <Link href="/profile" className="inline-flex items-center gap-1.5 text-sm text-white/80 hover:text-white mb-5 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Back to profile
       </Link>
       <PageHeader title="Edit profile" subtitle="Complete your profile to build trust with the community." />

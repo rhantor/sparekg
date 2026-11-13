@@ -13,7 +13,7 @@ const PRINCIPLES = [
 
 export function Trust() {
   return (
-    <section id="trust" className="bg-sand py-24 px-6">
+    <section id="trust" className="bg-white py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <Reveal>
           <SectionHeader

@@ -7,6 +7,7 @@ import {
   AlertCircle, Loader2, ShieldAlert, BadgeCheck, Clock, XCircle,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { FlightArc } from '@/components/sky/FlightArc';
 import { StatusBadge } from '@/components/app/StatusBadge';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -69,7 +70,7 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
 
   if (isError || !flight || !raw) {
     return (
-      <div className="text-center py-20">
+      <div className="max-w-md mx-auto text-center bg-white rounded-3xl shadow-float px-6 py-12">
         <AlertCircle className="w-6 h-6 text-ash mx-auto mb-3" />
         <p className="text-ash">{error?.code === 'not-found' ? 'Flight not found.' : 'Couldn’t load this flight.'}</p>
         <Link href="/flights" className="inline-flex items-center gap-1.5 text-teal font-semibold mt-4">
@@ -133,26 +134,19 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link href="/flights" className="inline-flex items-center gap-1.5 text-sm text-ash hover:text-navy mb-5 transition-colors">
+      <Link href="/flights" className="inline-flex items-center gap-1.5 text-sm text-white/80 hover:text-white mb-5 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Back to flights
       </Link>
 
       <div className="grid lg:grid-cols-[1.4fr_1fr] gap-6">
         {/* Left — flight info */}
         <div className="space-y-5">
-          <div className="bg-white rounded-2xl border border-line shadow-soft p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-3">
-                <Avatar name={flight.travelerName} color={flight.travelerColor} verified={flight.verified} size={48} />
-                <div>
-                  <div className="font-semibold text-navy">{flight.travelerName}</div>
-                  <div className="flex items-center gap-1 text-sm text-ash mt-0.5">
-                    <Star className="w-3.5 h-3.5 fill-gold text-gold" />
-                    <span className="font-medium text-navy">{flight.travelerRating.toFixed(1)}</span>
-                    <span>· {flight.travelerTrips} trips</span>
-                  </div>
-                </div>
-              </div>
+          {/* The listing as a boarding pass: route on top, traveler on the stub. */}
+          <div className="bg-white rounded-3xl shadow-float p-6 sm:p-7">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-code text-[0.68rem] uppercase tracking-[0.2em] text-ash">
+                {[flight.airline, flight.flightNumber].filter(Boolean).join(' · ') || 'Boarding pass'}
+              </span>
               <div className="flex items-center gap-2">
                 {ticketVerified && (
                   <span
@@ -166,19 +160,33 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
               </div>
             </div>
 
-            <div className="flex items-center justify-between bg-sand rounded-xl px-5 py-4">
+            <FlightArc loop={flight.status === 'LIVE'} progress={1} className="w-full mt-2" />
+            <div className="flex items-end justify-between -mt-3">
               <div>
-                <div className="font-display text-2xl font-semibold text-navy">{flight.originCode}</div>
-                <div className="text-xs text-ash">{flight.origin}</div>
-              </div>
-              <div className="flex-1 mx-4 flex items-center text-ash">
-                <span className="flex-1 h-px bg-line" />
-                <Plane className="w-5 h-5 mx-1 text-teal" />
-                <span className="flex-1 h-px bg-line" />
+                <div className="font-code text-4xl sm:text-5xl font-semibold leading-none text-navy">{flight.originCode}</div>
+                <div className="text-xs text-ash mt-1.5">{flight.origin}</div>
+                {flight.departClock && <div className="font-code text-sm text-navy mt-1">{flight.departClock}</div>}
               </div>
               <div className="text-right">
-                <div className="font-display text-2xl font-semibold text-navy">{flight.destinationCode}</div>
-                <div className="text-xs text-ash">{flight.destination}</div>
+                <div className="font-code text-4xl sm:text-5xl font-semibold leading-none text-navy">{flight.destinationCode}</div>
+                <div className="text-xs text-ash mt-1.5">{flight.destination}</div>
+                {flight.arriveClock && <div className="font-code text-sm text-navy mt-1">{flight.arriveClock}</div>}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mt-6 pt-5 border-t-2 border-dashed border-line">
+              <Avatar name={flight.travelerName} color={flight.travelerColor} verified={flight.verified} size={44} />
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-navy truncate">{flight.travelerName}</div>
+                <div className="flex items-center gap-1 text-sm text-ash mt-0.5">
+                  <Star className="w-3.5 h-3.5 fill-gold text-gold" />
+                  <span className="font-medium text-navy">{flight.travelerRating.toFixed(1)}</span>
+                  <span>· {flight.travelerTrips} trips</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-code text-[0.65rem] uppercase tracking-[0.2em] text-ash">Space</div>
+                <div className="font-code text-lg font-semibold text-navy">{flight.kgLeft}<span className="text-sm text-ash">/{flight.kgTotal} kg</span></div>
               </div>
             </div>
           </div>

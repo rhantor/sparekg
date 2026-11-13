@@ -74,7 +74,7 @@ export default function FlightsPage() {
       </div>
 
       {isLoading ? (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid lg:grid-cols-2 gap-5">
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-72 rounded-2xl border border-line bg-white/60 animate-pulse" />
           ))}
@@ -93,7 +93,7 @@ export default function FlightsPage() {
           </div>
 
           {flights.length > 0 ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid lg:grid-cols-2 gap-5">
               {flights.map((f) => (
                 <FlightCard key={f.id} flight={f} />
               ))}

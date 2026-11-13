@@ -12,11 +12,11 @@ export function SectionHeader({ label, title, desc, center, dark, className = ''
   return (
     <div className={`${center ? 'text-center' : ''} ${className}`}>
       {label && (
-        <p className={`text-xs font-semibold uppercase tracking-[0.18em] mb-3 ${dark ? 'text-teal-300' : 'text-teal'}`}>
+        <p className={`font-code text-xs uppercase tracking-[0.2em] mb-3 ${dark ? 'text-teal-300' : 'text-teal'}`}>
           {label}
         </p>
       )}
-      <h2 className={`font-display text-3xl md:text-[2.5rem] leading-[1.1] mb-3 ${dark ? 'text-white' : 'text-navy'}`}>
+      <h2 className={`font-display text-4xl md:text-5xl leading-[1.05] mb-4 ${dark ? 'text-white' : 'text-navy'}`}>
         {title}
       </h2>
       {desc && (

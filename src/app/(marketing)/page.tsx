@@ -13,10 +13,10 @@ export default function LandingPage() {
   return (
     <main>
       <Hero />
-      <HowItWorks />
       <LiveFlights />
-      <Beta />
+      <HowItWorks />
       <Trust />
+      <Beta />
       <About />
     </main>
   );

@@ -3,7 +3,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { Plane, Mail, AlertCircle, MailCheck, ArrowLeft } from 'lucide-react';
+import { Mail, AlertCircle, MailCheck, ArrowLeft } from 'lucide-react';
+import { AuthShell } from '@/components/sky/AuthShell';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -27,17 +28,15 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="site min-h-screen flex items-center justify-center bg-gradient-to-b from-sand to-white px-4">
-      <div className="w-full max-w-[400px]">
-        <div className="text-center mb-7">
-          <Link href="/" className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-navy mb-4">
-            <Plane className="w-7 h-7 text-teal-500" />
-          </Link>
-          <h1 className="font-display text-2xl font-semibold text-navy">Reset your password</h1>
-          <p className="text-sm text-ash mt-1">We&apos;ll email you a reset link</p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-line shadow-soft p-6 sm:p-7">
+    <AuthShell
+      title="Reset your password"
+      subtitle="We'll email you a reset link"
+      footer={
+        <Link href="/login" className="inline-flex items-center justify-center gap-1.5 hover:text-navy">
+          <ArrowLeft className="w-4 h-4" /> Back to sign in
+        </Link>
+      }
+    >
           {sent ? (
             <div className="text-center py-2">
               <div className="w-12 h-12 rounded-full bg-teal/10 flex items-center justify-center mx-auto mb-3">
@@ -69,12 +68,6 @@ export default function ForgotPasswordPage() {
               </button>
             </form>
           )}
-        </div>
-
-        <Link href="/login" className="flex items-center justify-center gap-1.5 text-sm text-ash hover:text-navy mt-6">
-          <ArrowLeft className="w-4 h-4" /> Back to sign in
-        </Link>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

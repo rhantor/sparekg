@@ -43,7 +43,7 @@ export function Beta() {
   }
 
   return (
-    <section id="beta" className="bg-white py-24 px-6">
+    <section id="beta" className="bg-sand py-24 px-6">
       <div className="max-w-3xl mx-auto">
         <Reveal>
           <SectionHeader
@@ -55,7 +55,7 @@ export function Beta() {
         </Reveal>
 
         {submitted ? (
-          <div className="mt-12 bg-sand rounded-2xl border border-line p-12 text-center">
+          <div className="mt-12 bg-white rounded-3xl shadow-float p-12 text-center">
             <div className="w-14 h-14 rounded-full bg-teal/10 flex items-center justify-center mx-auto mb-5">
               <Check className="w-7 h-7 text-teal" />
             </div>
@@ -65,7 +65,7 @@ export function Beta() {
             </p>
           </div>
         ) : (
-          <form onSubmit={submit} className="mt-12 bg-sand rounded-2xl border border-line p-8" noValidate>
+          <form onSubmit={submit} className="mt-12 bg-white rounded-3xl shadow-float p-8" noValidate>
             {/* Honeypot: invisible to people and screen readers, tempting to bots. */}
             <input
               type="text"

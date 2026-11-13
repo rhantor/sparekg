@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Plane, Lock, Mail, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Lock, Mail, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { AuthShell } from '@/components/sky/AuthShell';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
@@ -44,17 +45,11 @@ export default function SignupPage() {
   const inputCls = 'w-full pl-11 pr-3 py-2.5 rounded-lg border border-line bg-white text-navy text-sm outline-none focus:border-teal placeholder:text-ash/60';
 
   return (
-    <div className="site min-h-screen flex items-center justify-center bg-gradient-to-b from-sand to-white px-4 py-10">
-      <div className="w-full max-w-[400px]">
-        <div className="text-center mb-7">
-          <Link href="/" className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-navy mb-4">
-            <Plane className="w-7 h-7 text-teal-500" />
-          </Link>
-          <h1 className="font-display text-2xl font-semibold text-navy">Create your account</h1>
-          <p className="text-sm text-ash mt-1">Join the SpareKG community — it&apos;s free</p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-line shadow-soft p-6 sm:p-7">
+    <AuthShell
+      title="Create your account"
+      subtitle="Join the SpareKG community — it's free"
+      footer={<>Already have an account? <Link href="/login" className="font-semibold text-teal hover:text-teal-700">Sign in</Link></>}
+    >
           <button
             onClick={handleGoogle}
             disabled={googleLoading}
@@ -112,13 +107,7 @@ export default function SignupPage() {
             <Link href="/privacy" className="underline hover:text-navy">Privacy Policy</Link> and{' '}
             <Link href="/prohibited-items" className="underline hover:text-navy">Prohibited Items</Link> rules.
           </p>
-        </div>
-
-        <p className="text-center text-sm text-ash mt-6">
-          Already have an account? <Link href="/login" className="font-semibold text-teal hover:text-teal-700">Sign in</Link>
-        </p>
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 

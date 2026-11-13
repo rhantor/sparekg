@@ -5,7 +5,7 @@ import { Reveal } from '@/components/ui/Reveal';
 const TRAVELER_STEPS = [
   { t: 'Post your travel details', s: 'Share your route, date, and available luggage weight.' },
   { t: 'Set your capacity & terms', s: 'Choose how much weight you carry and what items you accept.' },
-  { t: 'Connect with senders & earn', s: 'Agree on terms, carry safely, and get paid on delivery.' },
+  { t: 'Connect with senders & earn', s: 'Accept a bid, check the parcel, and get paid at handover.' },
 ];
 
 const SENDER_STEPS = [

@@ -189,7 +189,7 @@ export default function NewFlightPage() {
 
   if (!kycApproved) {
     return (
-      <div className="max-w-xl mx-auto text-center py-16">
+      <div className="max-w-xl mx-auto text-center bg-white rounded-3xl shadow-float px-6 py-12 sm:px-10">
         <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-5">
           <ShieldAlert className="w-8 h-8 text-amber-600" />
         </div>
@@ -206,7 +206,7 @@ export default function NewFlightPage() {
 
   if (posted) {
     return (
-      <div className="max-w-xl mx-auto text-center py-16">
+      <div className="max-w-xl mx-auto text-center bg-white rounded-3xl shadow-float px-6 py-12 sm:px-10">
         <div className="w-16 h-16 rounded-full bg-teal/10 flex items-center justify-center mx-auto mb-5">
           <CheckCircle2 className="w-8 h-8 text-teal" />
         </div>
@@ -225,7 +225,7 @@ export default function NewFlightPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <Link href="/home" className="inline-flex items-center gap-1.5 text-sm text-ash hover:text-navy mb-5 transition-colors">
+      <Link href="/home" className="inline-flex items-center gap-1.5 text-sm text-white/80 hover:text-white mb-5 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Back
       </Link>
       <PageHeader title="Post a flight" subtitle="List your spare luggage capacity for senders on your route." />

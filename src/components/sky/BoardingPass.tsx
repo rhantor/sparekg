@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
-import { ArrowRight, BadgeCheck, Plane, Star } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowRight, BadgeCheck, Plane, Star, Users } from 'lucide-react';
+import { StatusBadge } from '@/components/app/StatusBadge';
 import './sky.css';
 
 /** What a pass needs to draw a flight — the shape view models already provide. */
@@ -108,46 +110,64 @@ export function SpaceMeter({ flight }: { flight: PassFlight }) {
   );
 }
 
+interface BoardingPassProps {
+  flight: PassFlight;
+  href: string;
+  /** Shown as a chip when the listing is not simply open (your own flights). */
+  status?: string;
+  /** Number of bids received, for the traveler's own listings. */
+  bids?: number;
+  cta?: string;
+}
+
 /**
  * A flight listing as a boarding pass: the trip on the main part, price and
  * space on a tear-off stub. The whole pass is one link.
  */
-export function BoardingPass({ flight, href = '#' }: { flight: PassFlight; href?: string }) {
+export function BoardingPass({ flight, href, status, bids, cta = 'Place a bid' }: BoardingPassProps) {
+  const showStatus = status && status !== 'LIVE';
   return (
-    <a href={href} className="sky-pass-shadow sky-pass-hover group block">
+    <Link href={href} className="sky-pass-shadow sky-pass-hover group block">
       <article className="sky-pass">
         <div className="p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3 mb-6">
             <PassTraveler flight={flight} />
-            {flight.ticketVerified && (
+            {showStatus ? (
+              <StatusBadge status={status} />
+            ) : flight.ticketVerified ? (
               <span className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full bg-azure-50 text-azure-600">
                 Ticket verified
               </span>
-            )}
+            ) : null}
           </div>
           <PassRoute flight={flight} />
           <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-haze">
             <PassField label="Date" value={flight.date} />
             <PassField label="Departs" value={flight.departs} />
-            <PassField label="Flight" value={flight.flightNo} align="right" />
+            <PassField label="Flight" value={flight.flightNo || '—'} align="right" />
           </div>
         </div>
 
-        <div className="sky-pass-stub p-5 sm:p-6 flex sm:flex-col justify-between gap-4 bg-gradient-to-b from-white to-azure-50/60">
+        <div className="sky-pass-stub p-5 @md:p-6 flex @md:flex-col justify-between gap-4 bg-gradient-to-b from-white to-azure-50/60">
           <div>
             <div className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-ash">Per kg</div>
             <div className="font-flight text-4xl text-night leading-none mt-1">
               <span className="text-xl align-top mr-0.5">RM</span>{flight.pricePerKg}
             </div>
+            {bids !== undefined && (
+              <div className="inline-flex items-center gap-1 text-xs text-ash mt-2">
+                <Users className="w-3.5 h-3.5" /> {bids} {bids === 1 ? 'bid' : 'bids'}
+              </div>
+            )}
           </div>
-          <div className="flex-1 sm:flex-none max-w-[9rem] sm:max-w-none self-end sm:self-auto w-full">
+          <div className="flex-1 @md:flex-none max-w-[9rem] @md:max-w-none self-end @md:self-auto w-full">
             <SpaceMeter flight={flight} />
-            <div className="hidden sm:flex items-center gap-1.5 text-sm font-semibold text-azure mt-4">
-              Place a bid <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+            <div className="hidden @md:flex items-center gap-1.5 text-sm font-semibold text-azure mt-4">
+              {cta} <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </div>
           </div>
         </div>
       </article>
-    </a>
+    </Link>
   );
 }

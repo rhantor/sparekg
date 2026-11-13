@@ -48,6 +48,19 @@ export function formatAirportTime(iso: string | null | undefined, airportCode: s
   return `${when} · ${cityFor(airportCode)} time`;
 }
 
+/** Just the clock time at the airport, "14:30" — for boarding-pass fields. */
+export function formatAirportClock(iso: string | null | undefined, airportCode: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-GB', {
+    timeZone: tzFor(airportCode),
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 /** Wall-clock fields of an instant as seen in `timeZone`. */
 function wallClock(ms: number, timeZone: string) {
   const parts = new Intl.DateTimeFormat('en-US', {

@@ -19,7 +19,9 @@ export interface PublicFlight {
   destination: string;
   /** Departure date at the origin airport, e.g. "3 Oct". */
   date: string;
+  flightNumber: string;
   kgLeft: number;
+  kgTotal: number;
   pricePerKg: number | null;
   currency: string;
   /** "Rahim K." — never a full name on a public page. */
@@ -60,7 +62,9 @@ export async function getOpenFlights(max = 6): Promise<PublicFlight[]> {
         date: departure
           ? departure.toLocaleDateString('en-GB', { timeZone: tzFor(f.originAirport), day: 'numeric', month: 'short' })
           : '—',
+        flightNumber: String(f.flightNumber ?? ''),
         kgLeft: Number(f.kgRemaining) || 0,
+        kgTotal: Number(f.totalKgAvailable) || 0,
         pricePerKg: typeof f.pricePerKg === 'number' ? f.pricePerKg : implied,
         currency: f.currency ?? 'MYR',
         travelerName: shortName(f.traveler?.displayName),
