@@ -30,9 +30,9 @@ if (process.env.NEXT_PUBLIC_USE_EMULATORS === "true" && typeof window !== "undef
   const w = window as unknown as { __sparekgEmulators?: boolean };
   // Connecting twice throws; HMR re-runs this module.
   if (!w.__sparekgEmulators) {
-    connectAuthEmulator(auth, "http://127.0.0.1:9199", { disableWarnings: true });
-    connectFirestoreEmulator(db, "127.0.0.1", 8180);
-    connectFunctionsEmulator(functions, "127.0.0.1", 5101);
+    connectAuthEmulator(auth, "http://127.0.0.1:19099", { disableWarnings: true });
+    connectFirestoreEmulator(db, "127.0.0.1", 18080);
+    connectFunctionsEmulator(functions, "127.0.0.1", 15001);
     w.__sparekgEmulators = true;
   }
 }

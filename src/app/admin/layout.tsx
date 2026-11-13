@@ -8,11 +8,11 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, ShieldCheck, Users, Scale,
-  Settings, ClipboardList, Plane, LogOut, ChevronRight, Sun, Moon, Menu, X,
+  ClipboardList, Plane, LogOut, ChevronRight, Sun, Moon, Menu, X,
   UsersRound, Ticket,
 } from 'lucide-react';
 
-// Economy, Reports and Content are left out until they have a real backend —
+// Reports and Content are left out until they have a real backend —
 // the console shows live data only. Queue depths are on the dashboard.
 const NAV_ITEMS = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -22,7 +22,6 @@ const NAV_ITEMS = [
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/audit', label: 'Audit Log', icon: ClipboardList },
   { href: '/admin/team', label: 'Team Access', icon: UsersRound, superOnly: true },
-  { href: '/admin/settings', label: 'Settings', icon: Settings, superOnly: true },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -168,7 +167,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               transition={{ duration: 0.25 }}
               className="p-4 md:p-6 lg:p-8"
             >
-              {/* The review forms (tickets, disputes) and Settings use the RTK
+              {/* The review forms (tickets, disputes) use the RTK
                   Query hooks, which throw without a store above them. */}
               <StoreProvider>{children}</StoreProvider>
             </motion.div>

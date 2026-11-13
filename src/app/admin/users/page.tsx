@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Users, Search, Star, Coins, Ban } from 'lucide-react';
+import { Users, Search, Star, Ban } from 'lucide-react';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { requireAdminPage, formatWhen, toIso } from '@/lib/admin-data';
 
@@ -14,7 +14,6 @@ interface Row {
   displayName: string;
   email: string;
   kycStatus: string;
-  points: number;
   trips: number;
   rating: number;
   ratingCount: number;
@@ -29,7 +28,6 @@ function toRow(doc: FirebaseFirestore.DocumentSnapshot): Row {
     displayName: u.displayName || '—',
     email: u.email || '—',
     kycStatus: u.kycStatus || 'PENDING',
-    points: (u.pointsBalance ?? 0) + (u.promoBalance ?? 0),
     trips: (u.completedTripsAsTraveler ?? 0) + (u.completedTripsAsSender ?? 0),
     rating: u.averageRating ?? 0,
     ratingCount: u.ratingCount ?? 0,
@@ -106,7 +104,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         ) : (
           <table className="data-table">
             <thead>
-              <tr><th>User</th><th>KYC</th><th>Points</th><th>Trips</th><th>Rating</th><th>Joined</th></tr>
+              <tr><th>User</th><th>KYC</th><th>Trips</th><th>Rating</th><th>Joined</th></tr>
             </thead>
             <tbody>
               {rows.map((u) => (
@@ -121,7 +119,6 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                     </Link>
                   </td>
                   <td><span className={`badge ${KYC_BADGE[u.kycStatus] ?? 'badge-neutral'}`}>{u.kycStatus.replace('_', ' ')}</span></td>
-                  <td><span className="flex items-center gap-1"><Coins className="w-3.5 h-3.5 text-brand-400" /> {u.points}</span></td>
                   <td>{u.trips}</td>
                   <td>
                     {u.ratingCount > 0

@@ -4,11 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Star, Plane, Calendar, Package, Tag, Check, CheckCircle2, Users,
-  AlertCircle, Loader2, ShieldAlert, Sparkles, BadgeCheck, Clock, XCircle,
+  AlertCircle, Loader2, ShieldAlert, BadgeCheck, Clock, XCircle,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusBadge } from '@/components/app/StatusBadge';
-import { FeatureFlightDialog } from '@/components/app/FeatureFlightDialog';
 import { useAuth } from '@/lib/auth-context';
 import {
   useGetFlightQuery,
@@ -17,12 +16,9 @@ import {
   useAcceptBidMutation,
   useDeclineBidMutation,
   useCancelFlightMutation,
-  useGetUserQuery,
-  useAppConfigQuery,
   useFlightTicketQuery,
 } from '@/lib/store/api';
 import { toAppFlight, colorFor } from '@/lib/view-models';
-import { isFeaturedNow, featureFlagsFrom } from '@/lib/economy';
 import { TICKET_REJECTION_REASONS } from '@/lib/ticket-review';
 import type { TicketRejectionReason, TicketStatus } from '@/lib/types';
 
@@ -56,16 +52,6 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
   const responding = accepting || declining;
   const router = useRouter();
   const [confirmingCancel, setConfirmingCancel] = useState(false);
-
-  const { data: profile } = useGetUserQuery(uid, { skip: !uid });
-  const balance = (profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0);
-  const [featuring, setFeaturing] = useState(false);
-
-  // Featured listings ship dark. The callable rejects the purchase while the
-  // flag is off, so the card is hidden rather than left to fail on click.
-  const { data: appConfig } = useAppConfigQuery();
-  const featuredEnabled = Boolean(featureFlagsFrom(appConfig).enableFeaturedListings);
-  const featuredNow = isFeaturedNow(raw?.isFeatured, raw?.featuredUntil);
 
   const [kg, setKg] = useState(2);
   const [item, setItem] = useState('');
@@ -234,39 +220,6 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
 
           {isMine ? (
             <>
-            {/* Only a live listing can be featured, which is what the callable
-                enforces — so don't offer it once the flight has moved on. */}
-            {featuredEnabled && flight.status === 'LIVE' && (
-              <div className="bg-white rounded-2xl border border-line shadow-soft p-5 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-navy text-sm">
-                      {featuredNow ? 'Featured listing' : 'Feature this listing'}
-                    </div>
-                    <div className="text-xs text-ash truncate">
-                      {featuredNow && raw?.featuredUntil
-                        ? `Top of browse until ${new Date(raw.featuredUntil).toLocaleString(undefined, {
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}.`
-                        : 'Sit above the other listings in browse results.'}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setFeaturing(true)}
-                    className="px-3 py-2 rounded-lg border border-amber-500/25 text-amber-600 text-xs font-semibold hover:bg-amber-500/[0.06] transition-colors shrink-0"
-                  >
-                    {featuredNow ? 'Extend' : 'Feature'}
-                  </button>
-                </div>
-              </div>
-            )}
-
             <TicketNotice status={raw.ticketStatus} reason={ticket?.rejectionReason ?? null} />
 
             <div className="bg-white rounded-2xl border border-line shadow-soft p-6">
@@ -332,7 +285,7 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                 <div className="bg-white rounded-2xl border border-rose-500/20 shadow-soft p-5 mt-4">
                   <p className="text-sm text-navy font-medium mb-1">Cancel this flight?</p>
                   <p className="text-sm text-ash mb-4">
-                    It will be removed from search and every pending bid is declined with its points returned.
+                    It will be removed from search and every pending bid is declined.
                   </p>
                   <div className="flex gap-2">
                     <button
@@ -418,24 +371,12 @@ export default function FlightDetailPage({ params }: { params: Promise<{ id: str
                 {submitting ? 'Submitting…' : 'Submit bid'}
               </button>
               <p className="text-xs text-ash text-center mt-2.5">
-                A small points fee is held with your bid and returned in full if it isn&apos;t accepted.
+                Bidding is free. You pay the traveler only if they accept, at handover.
               </p>
             </div>
           )}
         </div>
       </div>
-
-      {featuring && featuredEnabled && raw && (
-        <FeatureFlightDialog
-          open
-          onClose={() => setFeaturing(false)}
-          flightId={id}
-          uid={uid}
-          departureAt={raw.departureAt}
-          featuredUntil={raw.featuredUntil ?? null}
-          balance={balance}
-        />
-      )}
     </div>
   );
 }
@@ -462,7 +403,7 @@ function TicketNotice({ status, reason }: { status?: TicketStatus; reason: Ticke
         <div className="text-sm">
           <div className="font-semibold text-navy">Ticket not accepted</div>
           <p className="text-ash mt-0.5">
-            {TICKET_REJECTION_REASONS[reason ?? 'OTHER'].message} This listing was closed and every bidder&apos;s points were returned.
+            {TICKET_REJECTION_REASONS[reason ?? 'OTHER'].message} This listing was closed and its pending bids were declined.
           </p>
         </div>
       </div>

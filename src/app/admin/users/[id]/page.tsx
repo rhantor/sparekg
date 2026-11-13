@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
-  ArrowLeft, Star, Coins, Plane, Send, Shield, Ban, Mail, Phone, Calendar, PackageCheck, History,
+  ArrowLeft, Star, Plane, Send, Shield, Ban, Mail, Phone, Calendar, PackageCheck,
 } from 'lucide-react';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { requireAdminPage, formatWhen, safely, toIso } from '@/lib/admin-data';
@@ -35,13 +35,12 @@ export default async function UserDetail({ params }: { params: Promise<{ id: str
   if (!snap.exists) notFound();
   const u = snap.data()!;
 
-  const [authUser, flights, bids, dealsAsTraveler, dealsAsSender, ledger] = await Promise.all([
+  const [authUser, flights, bids, dealsAsTraveler, dealsAsSender] = await Promise.all([
     safely('auth user', () => adminAuth.getUser(id)),
     safely('flights', () => docs(adminDb.collection('flights').where('travelerId', '==', id).orderBy('departureAt', 'desc').limit(20))),
     safely('bids', () => docs(adminDb.collection('bids').where('senderId', '==', id).orderBy('createdAt', 'desc').limit(20))),
     safely('deals as traveler', () => docs(adminDb.collection('transactions').where('travelerId', '==', id).orderBy('createdAt', 'desc').limit(20))),
     safely('deals as sender', () => docs(adminDb.collection('transactions').where('senderId', '==', id).orderBy('createdAt', 'desc').limit(20))),
-    safely('ledger', () => docs(adminDb.collection('points_ledger').where('userId', '==', id).orderBy('createdAt', 'desc').limit(25))),
   ]);
 
   const deals = dealsAsTraveler && dealsAsSender
@@ -52,7 +51,6 @@ export default async function UserDetail({ params }: { params: Promise<{ id: str
 
   const isStaff = authUser?.customClaims?.admin === true;
   const canSuspend = id !== me.uid && (!isStaff || me.superAdmin);
-  const points = (u.pointsBalance ?? 0) + (u.promoBalance ?? 0);
 
   return (
     <div>
@@ -82,17 +80,6 @@ export default async function UserDetail({ params }: { params: Promise<{ id: str
               <Info icon={Star} label="Rating" value={u.ratingCount ? `${Number(u.averageRating).toFixed(1)} (${u.ratingCount})` : '—'} />
               <Info icon={Plane} label="Trips" value={`${u.completedTripsAsTraveler ?? 0} carried · ${u.completedTripsAsSender ?? 0} sent`} />
             </dl>
-          </div>
-
-          <div className="glass-card p-5">
-            <h2 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-              <Coins className="w-4 h-4 text-brand-400" /> Points
-            </h2>
-            <p className="text-3xl font-bold text-white">{points}</p>
-            <p className="text-xs text-gray-500">{u.promoBalance ?? 0} bonus · {u.pointsBalance ?? 0} purchased</p>
-            <p className="text-xs text-gray-600 mt-2">
-              Earned {u.lifetimePointsEarned ?? 0} · spent {u.lifetimePointsSpent ?? 0} all-time
-            </p>
           </div>
 
           <div className={`glass-card p-5 ${u.suspended ? 'border-red-500/40' : ''}`}>
@@ -150,20 +137,6 @@ export default async function UserDetail({ params }: { params: Promise<{ id: str
                 <td>MYR {String(b.offeredTotal)}</td>
                 <td><Badge status={String(b.status)} /></td>
                 <td className="text-xs text-gray-500">{formatWhen(toIso(b.createdAt))}</td>
-              </tr>
-            )}
-          </Section>
-
-          <Section icon={History} title="Points history" rows={ledger} empty="No points activity.">
-            {(e) => (
-              <tr key={e.id}>
-                <td className="text-white">{String(e.description ?? '')}</td>
-                <td className="text-xs">{String(e.category)}</td>
-                <td className={Number(e.delta) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                  {Number(e.delta) > 0 ? '+' : ''}{String(e.delta)}
-                </td>
-                <td>{String(e.balanceAfter)}</td>
-                <td className="text-xs text-gray-500">{formatWhen(toIso(e.createdAt))}</td>
               </tr>
             )}
           </Section>

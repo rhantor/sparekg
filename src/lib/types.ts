@@ -29,14 +29,6 @@ export type PayoutStatus = 'PENDING' | 'RELEASED' | 'REFUNDED' | 'DISPUTED';
 
 export type DisputeStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_FOR_SENDER' | 'RESOLVED_FOR_TRAVELER' | 'SPLIT' | 'CLOSED_INVALID';
 
-export type PointsCategory =
-  | 'SIGNUP' | 'MONTHLY' | 'REFERRAL' | 'TRIP_REWARD'
-  | 'BID_HOLD' | 'BID_CAPTURE' | 'BID_REFUND'
-  | 'FLIGHT_POST' | 'FEATURE' | 'URGENCY'
-  | 'PURCHASE' | 'ADMIN_ADJUSTMENT' | 'DISPUTE_RESOLUTION';
-
-export type ReferenceType = 'FLIGHT' | 'BID' | 'TRANSACTION' | 'PURCHASE' | 'DISPUTE' | 'NONE';
-
 export type IdType = 'PASSPORT' | 'NATIONAL_ID' | 'DRIVERS_LICENSE';
 
 export type RejectionReason =
@@ -57,8 +49,6 @@ export type AuditAction =
   | 'DISPUTE_RESOLVED' | 'CONTENT_UPDATED' | 'CONFIG_CHANGED'
   | 'REPORT_DISMISSED' | 'REPORT_ACTION_TAKEN'
   | 'FLIGHT_TICKET_VERIFIED' | 'FLIGHT_TICKET_REJECTED';
-
-export type PurchaseStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
 
 // ---- Denormalized Maps ----
 
@@ -88,10 +78,6 @@ export interface User {
   roles: UserRole[];
   kycStatus: KycStatus;
   kycSubmissionRef: string | null;
-  pointsBalance: number;
-  promoBalance: number;
-  lifetimePointsEarned: number;
-  lifetimePointsSpent: number;
   completedTripsAsTraveler: number;
   completedTripsAsSender: number;
   averageRating: number;
@@ -100,14 +86,6 @@ export interface User {
   homeAirportCode: string | null;
   createdAt: string;
   lastActiveAt: string;
-  /**
-   * Last time the user posted a flight or placed a bid.
-   *
-   * Distinct from `lastActiveAt`, which only records opening the app. This is
-   * what the monthly free credit qualifies on, so merely signing in does not
-   * earn it. Null on accounts that predate the field.
-   */
-  lastActivityAt: string | null;
   suspended: boolean;
   suspensionReason: string | null;
 }
@@ -155,8 +133,6 @@ export interface Flight {
   prohibitedItems: string[];
   specialNotes: string | null;
   status: FlightStatus;
-  isFeatured: boolean;
-  featuredUntil: string | null;
   bidCount: number;
   /** Absent on listings posted before ticket proof was required. */
   ticketStatus?: TicketStatus;
@@ -208,12 +184,6 @@ export interface Bid {
   specialHandling: string | null;
   offeredPricePerKg: number | null;
   offeredTotal: number;
-  urgencyLevel: 0 | 1 | 2 | 3;
-  urgencyExpiresAt: string | null;
-  pointsHeld: number;
-  /** How much of `pointsHeld` came from the promo bucket, so a refund can
-   *  return each part to the bucket it was taken from. */
-  pointsHeldPromo: number;
   status: BidStatus;
   agreedAt: string | null;
   expiresAt: string;
@@ -283,34 +253,6 @@ export interface DeliveryCode {
   transactionId: string;
   senderId: string;
   code: string;
-}
-
-export interface PointsLedgerEntry {
-  entryId: string;
-  userId: string;
-  delta: number;
-  balanceAfter: number;
-  category: PointsCategory;
-  referenceType: ReferenceType;
-  referenceId: string | null;
-  refundOf: string | null;
-  promoPortion: number;
-  description: string;
-  createdAt: string;
-  createdBy: 'USER' | 'SYSTEM' | 'ADMIN';
-  adminId: string | null;
-}
-
-export interface PointsPurchase {
-  purchaseId: string;
-  userId: string;
-  packageName: string;
-  points: number;
-  amountMyr: number;
-  status: PurchaseStatus;
-  providerRef: string | null;
-  createdAt: string;
-  completedAt: string | null;
 }
 
 export interface Dispute {
@@ -385,43 +327,6 @@ export interface OnboardingVideo {
   updatedAt: string;
 }
 
-export interface AppConfig {
-  feeSchedule: {
-    platformFeePercent: number;
-    cancellationRefundWindowHours: number;
-  };
-  pointsPricing: {
-    packages: {
-      name: string;
-      points: number;
-      priceMyr: number;
-    }[];
-  };
-  pointsEconomy: {
-    signupBonus: number;
-    monthlyFree: number;
-    monthlyFreeCap: number;
-    flightPostCost: number;
-    bidSubmitCost: number;
-    counterAcceptCost: number;
-    featuredCostPer24h: number;
-    urgencyLevel1CostPer24h: number;
-    urgencyLevel2CostPer48h: number;
-    urgencyLevel3CostPer72h: number;
-    relistCost: number;
-    tripRewardTraveler: number;
-    deliveryRewardSender: number;
-    referralRewardReferrer: number;
-    referralRewardInvitee: number;
-  };
-  kycRejectionReasons: {
-    code: RejectionReason;
-    messageEn: string;
-    messageBn: string;
-  }[];
-  featureFlags: Record<string, boolean>;
-}
-
 export interface AuditLogEntry {
   entryId: string;
   actorUid: string;
@@ -435,48 +340,6 @@ export interface AuditLogEntry {
   timestamp: string;
   ipAddress: string;
   userAgent: string;
-}
-
-// ---- Dashboard Aggregates ----
-
-export interface DashboardKpis {
-  dau: number;
-  wau: number;
-  mau: number;
-  dauMauRatio: number;
-  flightsPostedToday: number;
-  flightsPostedWeek: number;
-  flightsPostedMonth: number;
-  bidsSubmittedToday: number;
-  bidsAcceptedToday: number;
-  matchRate: number;
-  gmvMyr: number;
-  platformRevenueMyr: number;
-  kycQueueDepth: number;
-  kycMedianAgeHours: number;
-  disputeQueueDepth: number;
-  disputeMedianAgeHours: number;
-  totalPointsOutstanding: number;
-  reconciliationOk: boolean;
-}
-
-export interface PointsEconomySnapshot {
-  totalOutstanding: number;
-  reconciliationOk: boolean;
-  last24h: {
-    issued: Record<PointsCategory, number>;
-    spent: Record<PointsCategory, number>;
-    purchasedPoints: number;
-    purchasedMyr: number;
-  };
-  last7dTrend: {
-    date: string;
-    issued: number;
-    spent: number;
-    purchased: number;
-  }[];
-  topSpenders: { userId: string; name: string; amount: number }[];
-  topEarners: { userId: string; name: string; amount: number }[];
 }
 
 // ---- Auth Context ----

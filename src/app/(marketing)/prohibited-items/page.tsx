@@ -71,7 +71,7 @@ export default function ProhibitedItemsPage() {
       <h2>What happens if these rules are broken</h2>
       <p>
         Reports of prohibited goods go straight to our senior review. A confirmed violation leads to immediate
-        suspension of the account and loss of its points, and depending on the item it may be reported to the
+        suspension of the account, and depending on the item it may be reported to the
         authorities in Malaysia or Bangladesh.
       </p>
 

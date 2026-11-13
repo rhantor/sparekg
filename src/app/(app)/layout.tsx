@@ -9,7 +9,7 @@ import { useGetUserQuery } from '@/lib/store/api';
 import { colorFor } from '@/lib/view-models';
 import { Avatar } from '@/components/ui/Avatar';
 import {
-  Plane, Home, Search, PlusCircle, Layers, PackageCheck, User, LogOut, Coins, ShieldAlert,
+  Plane, Home, Search, PlusCircle, Layers, PackageCheck, User, LogOut, ShieldAlert,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -34,7 +34,7 @@ function activeHref(pathname: string): string | undefined {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   // The shell is a child, not this component, so that it too can use the
-  // marketplace hooks (points balance, badge counts) under the provider.
+  // marketplace hooks (the user's profile) under the provider.
   return (
     <StoreProvider>
       <AppShell>{children}</AppShell>
@@ -62,9 +62,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   const current = activeHref(pathname);
   const isActive = (href: string) => href === current;
-  // Promo points (sign-up, monthly, rewards) are spendable too, and are spent
-  // first — the chip shows everything the user can use, as every page does.
-  const spendable = (profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0);
 
   return (
     <div className="site min-h-screen flex flex-col bg-sand">
@@ -98,13 +95,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="flex items-center gap-2">
-            <Link
-              href="/points"
-              aria-label={`${spendable} points — view history`}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal/[0.08] text-teal-700 text-sm font-semibold hover:bg-teal/[0.14] transition-colors"
-            >
-              <Coins className="w-4 h-4" /> {spendable}
-            </Link>
             <Link href="/profile">
               <Avatar
                 name={profile?.displayName || user.displayName}

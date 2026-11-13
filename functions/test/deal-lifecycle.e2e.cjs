@@ -69,11 +69,11 @@ async function makeUser(name, { phone = '+60123456789', kyc = true, adminRole = 
     name,
   );
   const auth = getAuth(app);
-  connectAuthEmulator(auth, 'http://127.0.0.1:9199', { disableWarnings: true });
+  connectAuthEmulator(auth, 'http://127.0.0.1:19099', { disableWarnings: true });
   const fdb = getFirestore(app);
-  connectFirestoreEmulator(fdb, '127.0.0.1', 8180);
+  connectFirestoreEmulator(fdb, '127.0.0.1', 18080);
   const functions = getFunctions(app, 'us-central1');
-  connectFunctionsEmulator(functions, '127.0.0.1', 5101);
+  connectFunctionsEmulator(functions, '127.0.0.1', 15001);
 
   const cred = await createUserWithEmailAndPassword(auth, `${name}@test.dev`, 'password123');
   const uid = cred.user.uid;

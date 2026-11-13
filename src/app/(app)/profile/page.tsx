@@ -1,8 +1,8 @@
 'use client';
 import Link from 'next/link';
 import {
-  Star, ShieldCheck, ShieldAlert, Clock, Coins, Plane, Package, ChevronRight,
-  Wallet, PackageCheck, IdCard, LogOut, Pencil,
+  Star, ShieldCheck, ShieldAlert, Clock, MessageSquare, Plane, Package, ChevronRight,
+  PackageCheck, IdCard, LogOut, Pencil,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
@@ -49,10 +49,6 @@ export default function ProfilePage() {
   const kycPresentation = presentKycStatus(effectiveStatus);
   const verified = effectiveStatus === 'APPROVED';
 
-  // Promo points are spendable, so the headline figure is both buckets together —
-  // the same total the wallet and the boost dialogs quote.
-  const points = (profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0);
-
   // A brand-new account has no ratings. "0.0" reads as a terrible score rather
   // than an absent one, so show a dash until someone has actually rated them.
   const rating = (profile?.ratingCount ?? 0) > 0 ? (profile?.averageRating ?? 0).toFixed(1) : '—';
@@ -61,8 +57,8 @@ export default function ProfilePage() {
   const stat = (value: string) => (profileLoading ? dash : value);
 
   const STATS = [
-    { icon: Coins, label: 'Points', value: stat(`${points}`), tint: 'text-teal' },
     { icon: Star, label: 'Rating', value: stat(rating), tint: 'text-amber-500' },
+    { icon: MessageSquare, label: 'Reviews', value: stat(`${profile?.ratingCount ?? 0}`), tint: 'text-teal' },
     { icon: Plane, label: 'Carried', value: stat(`${profile?.completedTripsAsTraveler ?? 0}`), tint: 'text-ocean' },
     { icon: Package, label: 'Sent', value: stat(`${profile?.completedTripsAsSender ?? 0}`), tint: 'text-teal' },
   ];
@@ -77,7 +73,6 @@ export default function ProfilePage() {
         ? <span className="inline-block h-3 w-20 rounded bg-line/70 animate-pulse" />
         : kycPresentation.label,
     },
-    { href: '/points', icon: Wallet, label: 'Points & history', note: profileLoading ? '' : `${points} pts` },
     { href: '/deliveries', icon: PackageCheck, label: 'Your deliveries', note: '' },
   ];
 

@@ -1,10 +1,9 @@
 'use client';
 import Link from 'next/link';
-import { Coins, Star, Plane, ShieldCheck, PlusCircle, Search, ArrowRight, Layers } from 'lucide-react';
+import { PackageCheck, Star, Plane, ShieldCheck, PlusCircle, Search, ArrowRight, Layers } from 'lucide-react';
 import { PageHeader } from '@/components/app/PageHeader';
 import { FlightCard } from '@/components/app/FlightCard';
 import { StatusBadge } from '@/components/app/StatusBadge';
-import { WelcomeBonusDialog } from '@/components/app/WelcomeBonusDialog';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/lib/auth-context';
 import { useGetUserQuery, useMyFlightsQuery, useMyBidsQuery, useMyDealsQuery } from '@/lib/store/api';
@@ -42,12 +41,10 @@ export default function HomePage() {
 
   const stats = [
     {
-      icon: Coins,
-      label: 'Points balance',
-      // Both buckets are spendable (promo is spent first), so the headline is
-      // their sum — the same figure the header chip and bid dialogs use.
-      value: `${(profile?.pointsBalance ?? 0) + (profile?.promoBalance ?? 0)}`,
-      sub: `incl. ${profile?.promoBalance ?? 0} bonus points`,
+      icon: PackageCheck,
+      label: 'Active deliveries',
+      value: `${activeDeals.length}`,
+      sub: 'handover to delivery',
       tint: 'bg-teal/10 text-teal',
     },
     {
@@ -181,12 +178,6 @@ export default function HomePage() {
           You haven&apos;t placed any bids yet. <Link href="/flights" className="text-teal font-semibold">Find a flight</Link>.
         </div>
       )}
-
-      {/* Mounted here, not on the sign-up form: the bonus is written by an auth
-          trigger that finishes after the redirect, and email and Google sign-up
-          both land on this page. The dialog decides for itself whether there is
-          anything to celebrate. */}
-      {uid && <WelcomeBonusDialog key={uid} uid={uid} />}
     </div>
   );
 }

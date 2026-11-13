@@ -100,7 +100,7 @@ export default async function AdminDashboard() {
   const [
     users, verified, suspended, liveFlights, bidsTotal, bidsAgreed,
     activeDeals, completedDeals, agreedValue, kyc, tickets, disputes,
-    balances, ledgerTotal, routes,
+    bidsWaiting, routes,
   ] = await Promise.all([
     safely('users', () => count(adminDb.collection('users'))),
     safely('verified', () => count(adminDb.collection('users').where('kycStatus', '==', 'APPROVED'))),
@@ -117,22 +117,12 @@ export default async function AdminDashboard() {
     safely('ticket queue', () =>
       queue(adminDb.collection('flights').where('ticketStatus', '==', 'PENDING').where('status', 'in', ['LIVE', 'LOCKED']), 'createdAt')),
     safely('dispute queue', () => queue(adminDb.collection('disputes').where('status', '==', 'OPEN'), 'createdAt')),
-    safely('balances', () =>
-      adminDb.collection('users')
-        .aggregate({ points: AggregateField.sum('pointsBalance'), promo: AggregateField.sum('promoBalance') })
-        .get()
-        .then((s) => (s.data().points ?? 0) + (s.data().promo ?? 0))),
-    safely('ledger', () =>
-      adminDb.collection('points_ledger').aggregate({ total: AggregateField.sum('delta') }).get()
-        .then((s) => s.data().total ?? 0)),
+    safely('bids waiting', () => count(bids.where('status', '==', 'PENDING'))),
     safely('routes', liveRoutes),
   ]);
   const beta = await safely('beta sign-ups', latestBetaSignups);
 
   const matchRate = bidsTotal && bidsAgreed !== null ? bidsAgreed / bidsTotal : null;
-  // The ledger is the source of truth; balances are a cache of it. Any gap
-  // means a points move skipped the ledger — or the ledger was edited.
-  const reconciled = balances !== null && ledgerTotal !== null ? balances === ledgerTotal : null;
   const n = (v: number | null) => (v === null ? '—' : v.toLocaleString());
 
   return (
@@ -171,23 +161,11 @@ export default async function AdminDashboard() {
         <QueueCard label="Open disputes" href="/admin/disputes" icon={<Scale className="w-4 h-4" />} data={disputes} />
 
         <div className="glass-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-white">Points economy</h3>
-            {reconciled === null ? (
-              <span className="badge badge-neutral">Unavailable</span>
-            ) : reconciled ? (
-              <span className="badge badge-success"><CheckCircle2 className="w-3 h-3" /> Reconciled</span>
-            ) : (
-              <span className="badge badge-danger"><AlertTriangle className="w-3 h-3" /> Drift</span>
-            )}
-          </div>
-          <p className="text-3xl font-bold text-white">{n(balances)}</p>
-          <p className="text-xs text-gray-500">points held by users</p>
-          {reconciled === false && ledgerTotal !== null && balances !== null && (
-            <p className="text-xs text-red-400 mt-2">
-              Ledger totals {ledgerTotal.toLocaleString()} — off by {(balances - ledgerTotal).toLocaleString()}.
-            </p>
-          )}
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-4">
+            <Send className="w-4 h-4" /> Bids awaiting travelers
+          </h3>
+          <p className="text-3xl font-bold text-white">{n(bidsWaiting)}</p>
+          <p className="text-xs text-gray-500">open offers not yet answered</p>
         </div>
       </div>
 

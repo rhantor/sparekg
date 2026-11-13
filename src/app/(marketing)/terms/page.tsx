@@ -37,7 +37,7 @@ export default function TermsPage() {
       <h2>3. How a deal works</h2>
       <ul>
         <li><strong>Listing.</strong> A traveler lists a real, booked flight with the space and price they offer, and uploads proof of the ticket. Our team checks the ticket before any bid can be accepted.</li>
-        <li><strong>Bidding.</strong> A sender bids for part of that space, describing what they are sending. A small points fee is held with each bid and returned in full if the bid is declined, withdrawn or expires.</li>
+        <li><strong>Bidding.</strong> A sender bids for part of that space, describing what they are sending. Bidding is free. To keep offers serious, you can have one open bid per flight and five open bids in total.</li>
         <li><strong>Agreement.</strong> When a traveler accepts a bid, both of you can see each other&apos;s name and phone number to arrange the handover.</li>
         <li><strong>Handover.</strong> The sender hands over the parcel and the traveler inspects it. Both confirm the handover in the app.</li>
         <li><strong>Delivery.</strong> The sender gives the recipient a 6-digit code. The traveler enters it when delivering, which records the delivery.</li>
@@ -51,35 +51,28 @@ export default function TermsPage() {
         it. If we introduce a fee, it will be shown before you agree to a deal.
       </p>
 
-      <h2>5. Points</h2>
-      <ul>
-        <li>Points are used to place bids and for optional features. They have no cash value, cannot be exchanged for money and cannot be transferred to another account.</li>
-        <li>We give bonus points, for example when you join, each active month and after completed trips. Bonus points are spent before any others.</li>
-        <li>We may change how many points actions cost or earn. Points obtained through fraud or abuse may be removed.</li>
-      </ul>
-
-      <h2>6. If you are a traveler</h2>
+      <h2>5. If you are a traveler</h2>
       <ul>
         <li><strong>Inspect everything you carry.</strong> Never accept a sealed package or anything you have not seen. You may refuse any item, at any time, without penalty.</li>
         <li>Carry only what fits your airline allowance and the rules of both countries. You are the person responsible for your luggage at every airport.</li>
         <li>Deliver the parcel as agreed and record the delivery honestly.</li>
       </ul>
 
-      <h2>7. If you are a sender</h2>
+      <h2>6. If you are a sender</h2>
       <ul>
         <li>Send only lawful items that are not on our <Link href="/prohibited-items">prohibited items list</Link>.</li>
         <li>Describe the contents and declared value truthfully, pack them properly and let the traveler inspect them.</li>
         <li>Give the delivery code only to the person collecting the parcel — never to the traveler.</li>
       </ul>
 
-      <h2>8. Customs and the law</h2>
+      <h2>7. Customs and the law</h2>
       <p>
         Travelers and senders are each responsible for complying with the customs, import and export laws of Malaysia,
         Bangladesh and any other country involved, including declaring items and paying any duties. SpareKG does not
         give legal or customs advice.
       </p>
 
-      <h2>9. Problems and disputes</h2>
+      <h2>8. Problems and disputes</h2>
       <p>
         If something goes wrong, use <strong>Report a problem</strong> on the delivery — from the time a bid is
         accepted until 72 hours after delivery. Completion is paused while our team looks into it. We will review what
@@ -87,7 +80,7 @@ export default function TermsPage() {
         does not stop either of you from using any legal rights you have.
       </p>
 
-      <h2>10. Our liability</h2>
+      <h2>9. Our liability</h2>
       <p>
         Because we do not carry or handle items, we are not responsible for loss, damage, delay or confiscation of
         anything sent through an agreement made on SpareKG. The declared value of an item is recorded for
@@ -96,20 +89,20 @@ export default function TermsPage() {
         lawfully be limited.
       </p>
 
-      <h2>11. Suspension and closing accounts</h2>
+      <h2>10. Suspension and closing accounts</h2>
       <p>
         We may suspend or close an account that breaks these terms, puts other people at risk, tries to take deals
         outside SpareKG to avoid its safeguards, or is involved in fraud. Serious cases, such as carrying prohibited
         goods, may be reported to the authorities. You may stop using SpareKG at any time.
       </p>
 
-      <h2>12. Changes</h2>
+      <h2>11. Changes</h2>
       <p>
         We may update these terms as SpareKG develops. We will change the date at the top and, for significant
         changes, tell you in the app. Continuing to use SpareKG after a change means you accept the updated terms.
       </p>
 
-      <h2>13. Contact</h2>
+      <h2>12. Contact</h2>
       <p>
         Questions about these terms? <ContactLine />. See also our <Link href="/privacy">Privacy Policy</Link>.
       </p>

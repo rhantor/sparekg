@@ -25,7 +25,7 @@ export default function PrivacyPage() {
       <h3>When you use the marketplace</h3>
       <ul>
         <li>Flights you list (route, dates, airline, flight number, space, price) and the ticket you upload to prove them.</li>
-        <li>Bids, the items you describe and their declared value, handover and delivery confirmations, ratings, reports of problems, and your points history.</li>
+        <li>Bids, the items you describe and their declared value, handover and delivery confirmations, ratings, and reports of problems.</li>
       </ul>
       <h3>When you join the beta list</h3>
       <ul>
@@ -68,7 +68,7 @@ export default function PrivacyPage() {
       <h2>How long we keep it</h2>
       <p>
         We keep your information while your account is open. If you close it, we remove or anonymise your personal
-        details, except where we must keep records — for example of completed deliveries, points movements, disputes
+        details, except where we must keep records — for example of completed deliveries, disputes
         and staff decisions — to resolve problems, prevent fraud or meet legal obligations.
       </p>
 

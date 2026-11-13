@@ -129,7 +129,7 @@ export default function TeamPage() {
         </div>
 
         <p className="text-xs text-gray-500 mt-3">
-          Admins see every console page except this one and Settings. Super admins see everything, including
+          Admins see every console page except this one. Super admins see everything, including
           identity documents in the KYC queue.
         </p>
       </div>

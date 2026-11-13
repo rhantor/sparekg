@@ -26,8 +26,8 @@ const env = {
   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'demo-sparekg.firebaseapp.com',
   NEXT_PUBLIC_FIREBASE_API_KEY: 'demo-key',
   // Server-side Admin SDK (session cookie route) follows the emulators too.
-  FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9199',
-  FIRESTORE_EMULATOR_HOST: '127.0.0.1:8180',
+  FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:19099',
+  FIRESTORE_EMULATOR_HOST: '127.0.0.1:18080',
   GCLOUD_PROJECT: 'demo-sparekg',
 };
 

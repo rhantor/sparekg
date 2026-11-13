@@ -49,7 +49,7 @@ export function TicketReviewForm({ flightId }: { flightId: string }) {
           ))}
         </select>
         <p className="text-xs text-slate-400">
-          Rejecting cancels the listing and returns every pending bidder&apos;s points.
+          Rejecting cancels the listing and declines every pending bid on it.
         </p>
         <div className="flex gap-2 pt-2">
           <button
