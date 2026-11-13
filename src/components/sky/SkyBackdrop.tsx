@@ -5,15 +5,21 @@ const CLOUD =
   'M0 110 C 70 62 170 58 240 98 C 300 42 420 40 482 94 C 545 58 650 56 706 102 C 782 34 918 36 982 98 C 1045 64 1140 62 1202 104 C 1262 58 1372 62 1440 110 L 1440 240 L 0 240 Z';
 
 function CloudBand({
-  bottom, height, duration, opacity, fill,
-}: { bottom: number; height: number; duration: number; opacity: number; fill: string }) {
+  bottom, height, duration, opacity, fill, depth = 0,
+}: { bottom: number; height: number; duration: number; opacity: number; fill: string; depth?: number }) {
   return (
-    <div className="sky-cloud" style={{ bottom, opacity, animationDuration: `${duration}s` }}>
-      {[0, 1].map((i) => (
-        <svg key={i} viewBox="0 0 1440 240" preserveAspectRatio="none" style={{ height }}>
-          <path d={CLOUD} fill={fill} />
-        </svg>
-      ))}
+    // The outer layer drifts with the pointer (parallax); the inner one slides on its own.
+    <div
+      className="absolute inset-x-[-4%] bottom-0 top-0 transition-transform duration-700 ease-out"
+      style={depth ? { transform: `translate3d(calc(var(--px, 0) * ${depth}px), calc(var(--py, 0) * ${depth * 0.3}px), 0)` } : undefined}
+    >
+      <div className="sky-cloud" style={{ bottom, opacity, animationDuration: `${duration}s` }}>
+        {[0, 1].map((i) => (
+          <svg key={i} viewBox="0 0 1440 240" preserveAspectRatio="none" style={{ height }}>
+            <path d={CLOUD} fill={fill} />
+          </svg>
+        ))}
+      </div>
     </div>
   );
 }
@@ -26,7 +32,10 @@ function CloudBand({
  *
  * Purely decorative and positioned absolutely — the parent sets the size.
  */
-export function SkyBackdrop({ compact = false }: { compact?: boolean }) {
+export function SkyBackdrop({ compact = false, parallax = false }: { compact?: boolean; parallax?: boolean }) {
+  // Nearer layers move more. The front layer is the page colour, so it only
+  // drifts sideways and hangs a little lower to never show a seam.
+  const d = (n: number) => (parallax ? n : 0);
   const scale = compact ? 0.55 : 1;
   return (
     <div aria-hidden className="absolute inset-0 overflow-hidden">
@@ -57,9 +66,9 @@ export function SkyBackdrop({ compact = false }: { compact?: boolean }) {
             'radial-gradient(circle, rgba(255,214,165,0.85) 0%, rgba(255,190,125,0.35) 32%, rgba(255,190,125,0) 66%)',
         }}
       />
-      <CloudBand bottom={86 * scale} height={170 * scale} duration={150} opacity={0.35} fill="#ffffff" />
-      <CloudBand bottom={40 * scale} height={190 * scale} duration={95} opacity={0.65} fill="#ffffff" />
-      <CloudBand bottom={-2} height={200 * scale} duration={60} opacity={1} fill="#f4f7fb" />
+      <CloudBand bottom={86 * scale} height={170 * scale} duration={150} opacity={0.35} fill="#ffffff" depth={d(-14)} />
+      <CloudBand bottom={40 * scale} height={190 * scale} duration={95} opacity={0.65} fill="#ffffff" depth={d(-28)} />
+      <CloudBand bottom={parallax ? -14 : -2} height={200 * scale + (parallax ? 12 : 0)} duration={60} opacity={1} fill="#f4f7fb" depth={d(-40)} />
     </div>
   );
 }

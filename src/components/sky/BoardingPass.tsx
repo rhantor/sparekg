@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowRight, BadgeCheck, Plane, Star, Users } from 'lucide-react';
 import { StatusBadge } from '@/components/app/StatusBadge';
+import { Tilt } from '@/components/ui/Interactive';
 import './sky.css';
 
 /** What a pass needs to draw a flight — the shape view models already provide. */
@@ -127,6 +128,7 @@ interface BoardingPassProps {
 export function BoardingPass({ flight, href, status, bids, cta = 'Place a bid' }: BoardingPassProps) {
   const showStatus = status && status !== 'LIVE';
   return (
+    <Tilt max={5} radius="22px">
     <Link href={href} className="sky-pass-shadow sky-pass-hover group block">
       <article className="sky-pass">
         <div className="p-5 sm:p-6">
@@ -169,5 +171,6 @@ export function BoardingPass({ flight, href, status, bids, cta = 'Place a bid' }
         </div>
       </article>
     </Link>
+    </Tilt>
   );
 }

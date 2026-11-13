@@ -1,5 +1,5 @@
 import { Hero } from '@/components/marketing/Hero';
-import { HowItWorks } from '@/components/marketing/HowItWorks';
+import { Journey } from '@/components/marketing/Journey';
 import { LiveFlights } from '@/components/marketing/LiveFlights';
 import { Beta } from '@/components/marketing/Beta';
 import { Trust } from '@/components/marketing/Trust';
@@ -14,7 +14,7 @@ export default function LandingPage() {
     <main>
       <Hero />
       <LiveFlights />
-      <HowItWorks />
+      <Journey />
       <Trust />
       <Beta />
       <About />
