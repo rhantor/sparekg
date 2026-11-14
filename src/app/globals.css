@@ -628,3 +628,21 @@ select.input option {
 }
 .about-plane { animation: about-plane 4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
 @media (prefers-reduced-motion: reduce) { .about-plane { animation: none; left: calc(50% - 0.625rem); } }
+
+/* Tailwind v4 no longer gives buttons a pointer cursor; restore it everywhere. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  label[for],
+  select,
+  summary,
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='file'] {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+}

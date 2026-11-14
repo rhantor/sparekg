@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
-import { Inter, Instrument_Serif, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/lib/theme-context";
@@ -8,21 +8,34 @@ import { InteractionLayer } from "@/components/ui/InteractionLayer";
 
 // Inter for body/UI everywhere; Instrument Serif for headlines; JetBrains Mono
 // for the boarding-pass details (airport codes, times, prices).
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
+//
+// The files live in ./fonts (latin subset, OFL — licences alongside) rather
+// than being fetched from Google at build time, which made builds fail
+// whenever that download hiccuped.
+const inter = localFont({
+  src: "./fonts/inter-latin-wght-normal.woff2",
+  weight: "100 900",
+  style: "normal",
+  display: "swap",
   variable: "--font-inter",
+  fallback: ["system-ui", "-apple-system", "Segoe UI", "sans-serif"],
 });
-const instrument = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
+const instrument = localFont({
+  src: [
+    { path: "./fonts/instrument-serif-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/instrument-serif-latin-400-italic.woff2", weight: "400", style: "italic" },
+  ],
+  display: "swap",
   variable: "--font-instrument",
+  fallback: ["Georgia", "Times New Roman", "serif"],
 });
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const jetbrains = localFont({
+  src: "./fonts/jetbrains-mono-latin-wght-normal.woff2",
+  weight: "100 800",
+  style: "normal",
+  display: "swap",
   variable: "--font-jetbrains",
+  fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
 });
 
 export const metadata: Metadata = {
